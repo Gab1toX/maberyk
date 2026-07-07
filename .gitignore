@@ -1,0 +1,27 @@
+# Checkpoints y bases de datos — son grandes y contienen datos privados
+agent_state.pt
+agent_state_migrated.pt
+episodic_memory.sqlite3
+
+# Credenciales — NUNCA al repo
+google_credentials.json
+*.json
+
+# Reportes generados
+analisis/report.html
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+
+# Kaggle
+kaggle.json
+
+# VS Code
+.vscode/
+
+# Windows
+Thumbs.db
+desktop.ini
