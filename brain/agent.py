@@ -68,6 +68,7 @@ class Agent:
         self.action_counts = [0 for _ in range(action_size)]
         self.danger_action_scores = [0.0 for _ in range(action_size)]
         self.step_count = 0
+        self._recent_actions: deque[int] = deque(maxlen=1000)
 
     def act(self, observation: torch.Tensor | list[float] | tuple[float, ...]) -> int:
         observation_tensor = self._observation_tensor(observation)
@@ -105,6 +106,8 @@ class Agent:
 
         self.action_counts[action_value] += 1
         self.step_count += 1
+        self._recent_actions.append(action_value)
+        self._log_action_distribution_if_due()
         self._update_danger_memory(action_value, was_reset)
         self.emotional_state.update(
             surprise=surprise,
@@ -280,14 +283,53 @@ class Agent:
         curiosity = emotion["curiosity"]
         fear = emotion["fear"]
         max_count = max(self.action_counts, default=0) + 1
+        # Laplace-smoothed total so an untrained agent (all counts 0) sees a
+        # uniform 1/action_size share and contributes zero correction below.
+        total_count = sum(self.action_counts) + self.action_size
 
         for action_index in range(self.action_size):
             unseen_bonus = 1.0 - (self.action_counts[action_index] / max_count)
             danger_penalty = self.danger_action_scores[action_index]
+
+            # Root cause of the persistent "right" dominance: the curiosity
+            # bonus below is the only term that pulls scores away from an
+            # over-picked action, but it is scaled by `curiosity`, which
+            # trends toward its 0.03 floor as prediction error drops over
+            # long training -- exactly when action_counts imbalance is
+            # largest and correction is needed most. That let learn()'s
+            # imitation-style policy_loss (which reinforces whatever action
+            # was just taken) run away unchecked. diversity_correction is a
+            # curiosity-independent term: it is zero when an action's share
+            # of total actions equals the uniform 1/action_size share, and
+            # grows/shrinks proportionally to how far the action's actual
+            # share has drifted from uniform, so it keeps correcting skew
+            # even after curiosity has decayed.
+            visit_share = (self.action_counts[action_index] + 1) / total_count
+            diversity_correction = (1.0 / self.action_size - visit_share) * 0.5
+
             adjusted_scores[..., action_index] += curiosity * unseen_bonus * 0.25
+            adjusted_scores[..., action_index] += diversity_correction
             adjusted_scores[..., action_index] -= fear * danger_penalty * 0.75
 
         return adjusted_scores
+
+    def _log_action_distribution_if_due(self) -> None:
+        if self.step_count % 10000 != 0:
+            return
+
+        total_recent = len(self._recent_actions)
+        if not total_recent:
+            return
+
+        counts = [0 for _ in range(self.action_size)]
+        for action_value in self._recent_actions:
+            counts[action_value] += 1
+
+        breakdown = ", ".join(
+            f"{action_index}={counts[action_index] / total_recent * 100.0:.1f}%"
+            for action_index in range(self.action_size)
+        )
+        print(f"[action-bias check] step {self.step_count} (last {total_recent} actions): {breakdown}")
 
     def _update_danger_memory(self, action: int, was_reset: bool) -> None:
         self.danger_action_scores = [score * 0.98 for score in self.danger_action_scores]

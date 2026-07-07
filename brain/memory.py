@@ -99,6 +99,7 @@ class EpisodicMemory:
         if self._closed:
             return
         self._closed = True
+        self.flush()
         self._writer_stop.set()
         self._writer_thread.join()
         self.connection.close()
