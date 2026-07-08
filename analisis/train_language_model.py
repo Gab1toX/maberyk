@@ -23,7 +23,7 @@ def main() -> None:
     print(f"[train_language_model] using device: {device}")
 
     trainer = LanguageModelTrainer(args.memory, device=device)
-    epoch_losses = trainer.train(epochs=50, batch_size=32)
+    epoch_losses = trainer.train(epochs=20, batch_size=32)
     trainer.save(args.output)
 
     final_loss = epoch_losses[-1] if epoch_losses else float("nan")

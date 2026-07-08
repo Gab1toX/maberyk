@@ -120,16 +120,35 @@ class AgentLanguageModel(nn.Module):
             if word.strip()
         ] or [self.tokenizer.unk_index]
 
+        # Structural-artifact guard: ResponseEngine's fixed SVO pattern makes
+        # the prompt word itself (or <unk>) the dominant next token in the
+        # corpus, so left unchecked the model mostly echoes the prompt back.
+        # The first generated token is resampled away from the prompt's own
+        # token ids instead of just accepting whatever scores highest.
+        prompt_index_set = set(indices)
+
         generated = list(indices)
         input_tensor = torch.tensor([indices], dtype=torch.long, device=device)
         logits, hidden = self.forward(input_tensor)
 
-        for _ in range(max_new_tokens):
+        tokens_used = 0
+        first_token_resolved = False
+        while tokens_used < max_new_tokens:
             next_logits = logits[0, -1] / max(temperature, 1e-6)
             probabilities = torch.softmax(next_logits, dim=-1)
             next_index = int(torch.multinomial(probabilities, 1).item())
+            tokens_used += 1
+
             if next_index == self.tokenizer.pad_index:
                 break
+
+            if not first_token_resolved and next_index in prompt_index_set:
+                # Skip: resample from the same distribution (hidden state
+                # has not advanced) until a non-prompt word is produced or
+                # the max_new_tokens budget runs out.
+                continue
+
+            first_token_resolved = True
             generated.append(next_index)
             input_tensor = torch.tensor([[next_index]], dtype=torch.long, device=device)
             logits, hidden = self.forward(input_tensor, hidden)
@@ -203,7 +222,23 @@ class LanguageModelTrainer:
             ).fetchall()
         finally:
             connection.close()
-        return [row[0] for row in rows if row[0] and row[0].strip()]
+        return [
+            self._strip_structural_prefix(row[0])
+            for row in rows
+            if row[0] and row[0].strip()
+        ]
+
+    def _strip_structural_prefix(self, sentence: str) -> str:
+        # ResponseEngine emits a fixed SVO pattern, so nearly every sentence
+        # opens with the same two words (e.g. "curious see"). Dropping them
+        # removes that structural artifact from the training corpus without
+        # losing semantic content — but only when enough content remains
+        # after stripping, so short sentences are left intact.
+        words = sentence.split()
+        remainder = words[2:]
+        if len(remainder) > 4:
+            return " ".join(remainder)
+        return sentence
 
     def _collect_vocabulary(self, sentences: list[str]) -> list[str]:
         words: list[str] = []
