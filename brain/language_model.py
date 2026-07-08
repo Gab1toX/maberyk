@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import random
 import sqlite3
 from pathlib import Path
 from typing import Iterable
@@ -180,6 +181,19 @@ class LanguageModelTrainer:
         ).to(self.device)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
         self.loss_fn = nn.CrossEntropyLoss(ignore_index=self.tokenizer.pad_index)
+
+        self._print_startup_summary()
+
+    def _print_startup_summary(self) -> None:
+        sample_size = min(5, len(self.sentences))
+        sample = random.sample(self.sentences, sample_size)
+        print(
+            f"[language_model] loaded {len(self.sentences)} agent_generated sentences, "
+            f"vocab size {self.tokenizer.vocab_size}"
+        )
+        print("[language_model] sample sentences:")
+        for sentence in sample:
+            print(f"  - {sentence}")
 
     def _load_agent_generated_sentences(self) -> list[str]:
         connection = sqlite3.connect(self.memory_path)
