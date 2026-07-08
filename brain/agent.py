@@ -81,7 +81,30 @@ class Agent:
         with torch.no_grad():
             action_scores = self.policy(observation_tensor)
             action_scores = self._emotion_adjusted_scores(action_scores)
-            return action_scores.argmax(dim=-1).item()
+            top_action = action_scores.argmax(dim=-1).item()
+
+            # Break deterministic lock-in: if the greedy pick is also the
+            # action that has dominated >80% of all steps so far, there is a
+            # real risk the policy network has converged to always scoring it
+            # highest regardless of observation. Rather than go fully random
+            # (which would erase greedy behavior), only 30% of the time force
+            # a sample weighted toward the other actions' own scores.
+            total_steps = sum(self.action_counts)
+            if total_steps > 0:
+                dominant_action = max(range(self.action_size), key=lambda i: self.action_counts[i])
+                dominant_share = self.action_counts[dominant_action] / total_steps
+                if (
+                    top_action == dominant_action
+                    and dominant_share > 0.8
+                    and torch.rand(1, device=self.device).item() < 0.3
+                ):
+                    non_dominant = [i for i in range(self.action_size) if i != dominant_action]
+                    non_dominant_scores = action_scores[..., non_dominant]
+                    probabilities = torch.softmax(non_dominant_scores, dim=-1).squeeze(0)
+                    sampled_index = torch.multinomial(probabilities, 1).item()
+                    return non_dominant[sampled_index]
+
+            return top_action
 
     def learn(self, experience: dict[str, Any]) -> dict[str, float]:
         observation = self._observation_tensor(experience["observation"])
@@ -305,11 +328,25 @@ class Agent:
             # share has drifted from uniform, so it keeps correcting skew
             # even after curiosity has decayed.
             visit_share = (self.action_counts[action_index] + 1) / total_count
-            diversity_correction = (1.0 / self.action_size - visit_share) * 0.5
+            diversity_correction = (1.0 / self.action_size - visit_share) * 2.0
 
             adjusted_scores[..., action_index] += curiosity * unseen_bonus * 0.25
             adjusted_scores[..., action_index] += diversity_correction
             adjusted_scores[..., action_index] -= fear * danger_penalty * 0.75
+
+        # Even a 2.0x diversity_correction is an additive term and can still
+        # be overwhelmed by a policy score that has run away after millions
+        # of steps of imitation-style reinforcement. This hard suppression is
+        # a multiplicative backstop applied after every additive adjustment
+        # above: once an action's raw share of action_counts crosses 70%, its
+        # score is crushed to 10% regardless of emotion state, guaranteeing
+        # it can no longer win argmax against any other action with a
+        # non-negative adjusted score.
+        total_actions = sum(self.action_counts)
+        if total_actions > 0:
+            for action_index in range(self.action_size):
+                if self.action_counts[action_index] / total_actions > 0.7:
+                    adjusted_scores[..., action_index] *= 0.1
 
         return adjusted_scores
 
