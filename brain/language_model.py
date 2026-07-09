@@ -265,6 +265,8 @@ class LanguageModelTrainer:
     def train(self, epochs: int = 10, batch_size: int = 16) -> list[float]:
         self.model.train()
         epoch_losses = []
+        best_loss = float("inf")
+        stale_epochs = 0
         for epoch in range(epochs):
             total_loss = 0.0
             batch_count = 0
@@ -288,6 +290,18 @@ class LanguageModelTrainer:
             average_loss = total_loss / max(batch_count, 1)
             epoch_losses.append(average_loss)
             print(f"[language_model] epoch {epoch + 1}/{epochs} — loss {average_loss:.4f}")
+
+            if best_loss - average_loss > 0.01:
+                best_loss = average_loss
+                stale_epochs = 0
+            else:
+                stale_epochs += 1
+                if stale_epochs >= 3:
+                    print(
+                        f"[language_model] early stopping at epoch {epoch + 1}/{epochs} "
+                        "— loss did not improve by more than 0.01 for 3 consecutive epochs"
+                    )
+                    break
 
         return epoch_losses
 
