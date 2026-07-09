@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 from typing import Any
 
 
@@ -32,6 +33,24 @@ class ResponseEngine:
         "fear",
         "ask",
     )
+    # Each template arranges the same SVO components in a different order so
+    # agent_generated sentences are not structurally identical (see
+    # analisis/train_language_model.py, which trains on this corpus and was
+    # previously stripping a fixed 2-word prefix from every sentence).
+    TEMPLATES = {
+        "assertion": ("object", "verb", "emotion"),
+        "question": ("verb", "object", "subject"),
+        "warning": ("emotion", "object", "verb"),
+        "exploration": ("subject", "verb", "object"),
+    }
+    TEMPLATE_WEIGHTS_BY_DOMINANT_EMOTION = {
+        "confidence": {"assertion": 0.4, "exploration": 0.3, "question": 0.2, "warning": 0.1},
+        "confusion": {"question": 0.4, "exploration": 0.3, "assertion": 0.2, "warning": 0.1},
+        "fear": {"warning": 0.4, "assertion": 0.3, "question": 0.2, "exploration": 0.1},
+        "curiosity": {"exploration": 0.4, "question": 0.3, "assertion": 0.2, "warning": 0.1},
+    }
+    CONNECTOR_WORDS = ("es", "son", "porque", "pero", "y", "no", "la", "el")
+    MAX_RESPONSE_WORDS = 6
     STOPWORDS = {
         "soy",
         "eres",
@@ -170,10 +189,11 @@ class ResponseEngine:
             return ""
 
         mode = self._response_mode(emotional_state)
-        words = self._svo_words(mode, human_message, memory_context)
+        template = self._select_template(emotional_state)
+        words = self._svo_words(mode, template, human_message, memory_context)
         if not words:
             words = self._fallback_words(mode)
-        return " ".join(words[:7])
+        return " ".join(words[: self.MAX_RESPONSE_WORDS])
 
     def _response_mode(self, emotional_state: dict) -> str:
         values = emotional_state if isinstance(emotional_state, dict) else {}
@@ -198,20 +218,55 @@ class ResponseEngine:
         best = max(scored, key=lambda item: item[1])
         return best[0] if best[1] > 0.0 else "exploration"
 
+    def _select_template(self, emotional_state: dict) -> str:
+        values = emotional_state if isinstance(emotional_state, dict) else {}
+        dominant = max(
+            self.TEMPLATE_WEIGHTS_BY_DOMINANT_EMOTION,
+            key=lambda key: float(values.get(key, 0.0)),
+        )
+        weights = self.TEMPLATE_WEIGHTS_BY_DOMINANT_EMOTION[dominant]
+        names = list(weights.keys())
+        return random.choices(names, weights=list(weights.values()), k=1)[0]
+
+    def _connector_words(self) -> list[str]:
+        return [word for word in self.CONNECTOR_WORDS if word in self._vocabulary_set]
+
+    def _insert_connector(self, words: list[str]) -> list[str]:
+        if len(words) < 2:
+            return words
+        connectors = self._connector_words()
+        if not connectors:
+            return words
+        connector = random.choice(connectors)
+        if connector in words:
+            return words
+        return [words[0], connector] + words[1:]
+
     def _svo_words(
         self,
         mode: str,
+        template: str,
         human_message: str,
         memory_context: list[dict],
     ) -> list[str]:
-        subject = self._first_known(self.SUBJECT_WORDS)
-        verb = self._verb_for_mode(mode)
-        object_word = self._object_word(human_message, memory_context, mode)
+        components = {
+            "subject": self._first_known(self.SUBJECT_WORDS),
+            "verb": self._verb_for_mode(mode),
+            "object": self._object_word(human_message, memory_context, mode),
+            "emotion": self._first_known(self.EMOTION_WORDS.get(mode, ())),
+        }
+        order = self.TEMPLATES.get(template, self.TEMPLATES["exploration"])
 
-        words = [word for word in (subject, verb, object_word) if word]
+        words: list[str] = []
+        for part in order:
+            word = components.get(part)
+            if word and word not in words:
+                words.append(word)
+
+        words = self._insert_connector(words)
         extra = self._extra_context_words(human_message, words)
         words.extend(extra)
-        return words[:7]
+        return words[: self.MAX_RESPONSE_WORDS]
 
     def _verb_for_mode(self, mode: str) -> str | None:
         preferred = {
@@ -257,7 +312,7 @@ class ResponseEngine:
                 and word not in context_words
             ):
                 context_words.append(word)
-                if len(context_words) + len(existing) >= 7:
+                if len(context_words) + len(existing) >= self.MAX_RESPONSE_WORDS:
                     break
         return context_words
 
