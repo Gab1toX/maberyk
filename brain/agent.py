@@ -70,6 +70,14 @@ class Agent:
         self.step_count = 0
         self._recent_actions: deque[int] = deque(maxlen=1000)
 
+        # language_model.pt is trained offline (brain/language_model.py) and is
+        # not part of agent_state.pt — it is looked up next to the checkpoint
+        # and loaded lazily, only on the first human message received.
+        self._checkpoint_dir = self.memory_path.parent
+        self._language_model = None
+        self._language_model_tokenizer = None
+        self._language_model_unavailable = False
+
     def act(self, observation: torch.Tensor | list[float] | tuple[float, ...]) -> int:
         observation_tensor = self._observation_tensor(observation)
 
@@ -205,6 +213,7 @@ class Agent:
 
     def save(self, path: str | Path) -> None:
         self.memory.flush()
+        self._checkpoint_dir = Path(path).parent
         torch.save(
             {
                 "observation_size": self.observation_size,
@@ -278,6 +287,7 @@ class Agent:
         agent.action_counts = checkpoint.get("action_counts", agent.action_counts)
         agent.danger_action_scores = checkpoint.get("danger_action_scores", agent.danger_action_scores)
         agent.step_count = checkpoint.get("step_count", agent.step_count)
+        agent._checkpoint_dir = Path(path).parent
         return agent
 
     def close(self) -> None:
@@ -426,10 +436,14 @@ class Agent:
         memory_context = self.conversation_memory.recall(human_message, limit=2)
 
         # Generate response using enriched vocabulary and emotional state
-        self.last_response = self.response_engine.generate(
+        response_engine_reply = self.response_engine.generate(
             human_message,
             self.emotional_state.values(),
             memory_context,
+        )
+        language_model_reply = self._generate_language_model_response(human_message)
+        self.last_response = self._select_response(
+            human_message, response_engine_reply, language_model_reply
         )
 
         # Store the exchange and reinforce language associations
@@ -448,6 +462,86 @@ class Agent:
             1.0,
             self.emotional_state.curiosity + 0.3,
         )
+
+    def _load_language_model(self) -> bool:
+        """Lazily load language_model.pt from the checkpoint directory.
+
+        Silent no-op if the file is missing or fails to load — the model is
+        an optional scaffold (see brain/language_model.py) and the agent must
+        keep functioning on ResponseEngine alone until it exists.
+        """
+        path = self._checkpoint_dir / "language_model.pt"
+        if not path.exists():
+            self._language_model_unavailable = True
+            return False
+
+        try:
+            from brain.language_model import LanguageModelTrainer
+
+            model, tokenizer = LanguageModelTrainer.load_model(path, map_location=self.device)
+            model.to(self.device)
+            model.eval()
+        except Exception as exc:
+            print(f"[language_model] failed to load {path}: {exc}")
+            self._language_model_unavailable = True
+            return False
+
+        self._language_model = model
+        self._language_model_tokenizer = tokenizer
+        return True
+
+    def _generate_language_model_response(self, human_message: str) -> str | None:
+        if self._language_model_unavailable:
+            return None
+        if self._language_model is None and not self._load_language_model():
+            return None
+
+        prompt_words = self._clean_words(human_message)
+        if not prompt_words:
+            return None
+
+        try:
+            generated = self._language_model.generate(
+                prompt_words, max_new_tokens=self.response_engine.MAX_RESPONSE_WORDS, temperature=0.8
+            )
+        except Exception as exc:
+            print(f"[language_model] generation failed: {exc}")
+            return None
+
+        tokenizer = self._language_model_tokenizer
+        words = [word for word in generated if word not in (tokenizer.PAD, tokenizer.UNK)]
+        if not words:
+            return None
+        return " ".join(words[: self.response_engine.MAX_RESPONSE_WORDS])
+
+    def _select_response(
+        self, human_message: str, response_engine_reply: str, language_model_reply: str | None
+    ) -> str:
+        if not language_model_reply:
+            return response_engine_reply
+        if not response_engine_reply:
+            return language_model_reply
+
+        # "Semantically related" is approximated the same way ResponseEngine
+        # already picks its own object word: overlap between the reply and
+        # the human message, restricted to words the agent actually knows.
+        vocabulary = set(self.language.vocabulary)
+        message_words = {word for word in self._clean_words(human_message) if word in vocabulary}
+
+        language_model_overlap = len(message_words & set(self._clean_words(language_model_reply)))
+        response_engine_overlap = len(message_words & set(self._clean_words(response_engine_reply)))
+
+        if language_model_overlap > response_engine_overlap:
+            return language_model_reply
+        return response_engine_reply
+
+    def _clean_words(self, text: str) -> list[str]:
+        words = []
+        for word in str(text or "").lower().split():
+            clean = re.sub(r"[^\w]", "", word)
+            if clean:
+                words.append(clean)
+        return words
 
     def _plain_value(self, value: Any) -> Any:
         if isinstance(value, torch.Tensor):

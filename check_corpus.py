@@ -13,5 +13,5 @@ print(f'Sin ese prefijo: {len(sentences)-with_prefix}')
 
 others = [s for s in sentences if not s.lower().startswith('curious see')]
 print('Muestra sin prefijo:')
-for s in others[:5]:
+for s in others[:10]:
     print(f'  - {s}')
