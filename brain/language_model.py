@@ -229,16 +229,18 @@ class LanguageModelTrainer:
         ]
 
     def _strip_structural_prefix(self, sentence: str) -> str:
-        # ResponseEngine emits a fixed SVO pattern, so nearly every sentence
-        # opens with the same two words (e.g. "curious see"). Dropping them
-        # removes that structural artifact from the training corpus without
-        # losing semantic content — but only when enough content remains
-        # after stripping, so short sentences are left intact.
+        # ResponseEngine emits a fixed SVO pattern, so "curious"/"see" tend to
+        # open the sentence as structural artifacts rather than content words.
+        # Drop those two tokens wherever they occur in the first 4 words;
+        # every other word is preserved regardless of sentence length.
         words = sentence.split()
-        remainder = words[2:]
-        if len(remainder) > 4:
-            return " ".join(remainder)
-        return sentence
+        prefix_len = min(4, len(words))
+        kept = [
+            word
+            for word in words[:prefix_len]
+            if word.lower() not in ("curious", "see")
+        ]
+        return " ".join(kept + words[prefix_len:])
 
     def _collect_vocabulary(self, sentences: list[str]) -> list[str]:
         words: list[str] = []
