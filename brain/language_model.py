@@ -58,6 +58,12 @@ class AgentTokenizer:
             if int(index) != self.pad_index
         ]
 
+    def most_common_token(self) -> str:
+        """First non-special vocabulary word (index 2, since 0=PAD, 1=UNK)."""
+        if len(self.words) > len(self.SPECIAL_TOKENS):
+            return self.words[len(self.SPECIAL_TOKENS)]
+        return self.UNK
+
 
 class AgentLanguageModel(nn.Module):
     """Minimal word-level autoregressive LSTM. Every weight starts at random init
@@ -114,8 +120,11 @@ class AgentLanguageModel(nn.Module):
         self.eval()
         device = next(self.parameters()).device
 
+        fallback_index = self.tokenizer.word_to_index.get(
+            self.tokenizer.most_common_token(), self.tokenizer.unk_index
+        )
         indices = [
-            self.tokenizer.word_to_index.get(word.lower().strip(), self.tokenizer.unk_index)
+            self.tokenizer.word_to_index.get(word.lower().strip(), fallback_index)
             for word in prompt_words
             if word.strip()
         ] or [self.tokenizer.unk_index]
@@ -238,7 +247,7 @@ class LanguageModelTrainer:
         kept = [
             word
             for word in words[:prefix_len]
-            if word.lower() not in ("curious", "see")
+            if word.lower() not in ("curious", "see", "safe")
         ]
         return " ".join(kept + words[prefix_len:])
 

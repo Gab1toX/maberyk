@@ -32,10 +32,10 @@ def main() -> None:
     print(f"[train_language_model] final loss: {final_loss:.4f}")
     print(f"[train_language_model] weights saved to {args.output}")
 
-    print(f"[train_language_model] sample generations (prompt='curious', temperature={args.temperature}):")
+    print(f"[train_language_model] sample generations (prompt='mente', temperature={args.temperature}):")
     for _ in range(5):
         words = trainer.model.generate(
-            prompt_words=["curious"],
+            prompt_words=["mente"],
             max_new_tokens=8,
             temperature=args.temperature,
         )
