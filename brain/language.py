@@ -50,7 +50,10 @@ class LanguageEngine:
 
         def known_word(word: Any) -> str:
             word = str(word or "").lower().strip()
-            return word if word in vocabulary else "something"
+            if word in vocabulary:
+                return word
+            base = word.rstrip("_0123456789")
+            return base if base and base in vocabulary else "something"
 
         def first_object() -> tuple[str | None, str | None]:
             if not isinstance(observation, dict):
