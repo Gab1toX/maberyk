@@ -409,7 +409,8 @@ class Agent:
                 "action": action,
                 "outcome": self._plain_value(outcome),
                 "surprise_level": surprise,
-            }
+            },
+            thought=self.current_thought,
         )
 
     def _respond_to_human_message(self, experience: dict[str, Any]) -> None:

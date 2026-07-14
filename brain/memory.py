@@ -40,7 +40,7 @@ class EpisodicMemory:
         self._writer_thread.start()
         atexit.register(self.close)
 
-    def store(self, episode: dict[str, Any]) -> int:
+    def store(self, episode: dict[str, Any], thought: str = "") -> int:
         timestamp = episode.get("timestamp", time.time())
         episode_id = self._next_episode_id
         self._next_episode_id += 1
@@ -51,6 +51,7 @@ class EpisodicMemory:
             "outcome": episode["outcome"],
             "surprise_level": float(episode["surprise_level"]),
             "timestamp": float(timestamp),
+            "thought": str(thought),
             "_observation_vector": self._to_vector(episode["observation"]),
         }
         self._episodes_by_recency.insert(0, cached_episode)
@@ -142,6 +143,11 @@ class EpisodicMemory:
         self.connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_episodes_surprise ON episodes (surprise_level)"
         )
+        existing_columns = {
+            row["name"] for row in self.connection.execute("PRAGMA table_info(episodes)")
+        }
+        if "thought" not in existing_columns:
+            self.connection.execute("ALTER TABLE episodes ADD COLUMN thought TEXT DEFAULT ''")
         self.connection.commit()
 
     def _load_episode_cache(self) -> None:
@@ -216,8 +222,8 @@ class EpisodicMemory:
     ) -> None:
         connection.executemany(
             """
-            INSERT INTO episodes (observation, action, outcome, surprise_level, timestamp)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO episodes (observation, action, outcome, surprise_level, timestamp, thought)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -226,6 +232,7 @@ class EpisodicMemory:
                     self._to_json(episode["outcome"]),
                     float(episode["surprise_level"]),
                     float(episode["timestamp"]),
+                    str(episode.get("thought", "")),
                 )
                 for episode in episodes
             ],
