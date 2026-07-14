@@ -149,7 +149,7 @@ class Agent:
         self._respond_to_human_message(experience)
         self.current_thought = self.language.express(
             self.emotional_state,
-            self._plain_value(experience.get("next_observation", experience["observation"])),
+            self._plain_value(experience.get("outcome", experience.get("next_observation", experience["observation"]))),
             self.memory,
         )
         self.language.improve_from_last_expression(
