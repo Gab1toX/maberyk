@@ -226,16 +226,40 @@ class LanguageModelTrainer:
     def _load_agent_generated_sentences(self) -> list[str]:
         connection = sqlite3.connect(self.memory_path)
         try:
-            rows = connection.execute(
+            conversation_rows = connection.execute(
                 "SELECT answer FROM conversations WHERE source = 'agent_generated'"
+            ).fetchall()
+            thought_rows = connection.execute(
+                "SELECT thought FROM episodes WHERE thought != '' AND thought IS NOT NULL"
             ).fetchall()
         finally:
             connection.close()
-        return [
-            self._strip_structural_prefix(row[0])
-            for row in rows
+
+        conversation_sentences = [
+            stripped
+            for row in conversation_rows
             if row[0] and row[0].strip()
+            for stripped in [self._strip_structural_prefix(row[0])]
+            if stripped.strip()
         ]
+        thought_sentences = [
+            stripped
+            for row in thought_rows
+            if row[0] and row[0].strip()
+            for stripped in [self._strip_structural_prefix(row[0])]
+            if stripped.strip()
+        ]
+
+        deduped = list(dict.fromkeys(conversation_sentences + thought_sentences))
+        random.shuffle(deduped)
+
+        print(
+            f"[language_model] {len(conversation_sentences)} from conversations, "
+            f"{len(thought_sentences)} from episodes thoughts, "
+            f"{len(deduped)} total after dedup"
+        )
+
+        return deduped
 
     def _strip_structural_prefix(self, sentence: str) -> str:
         # ResponseEngine emits a fixed SVO pattern, so "curious"/"see" tend to
