@@ -1,5 +1,10 @@
 # CLAUDE.md — proyecto5 / agente_base
 
+## Documento de visión
+Este proyecto tiene un documento de visión completo: MABERYK_VISION.md
+Léelo antes de cualquier decisión arquitectónica. Es la autoridad máxima.
+El agente se llama Maberyk. Su creador es Gabito (Vaendaloo).
+
 ## What this project is
 
 An artificial intelligence agent built entirely from scratch in pure Python/PyTorch.
