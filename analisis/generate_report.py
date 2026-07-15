@@ -40,7 +40,13 @@ def read_memory(memory_path):
                 """
             )
         ]
-    return conversations, episodes
+        thoughts = [
+            row["thought"]
+            for row in conn.execute(
+                "SELECT thought FROM episodes WHERE thought != '' AND thought IS NOT NULL"
+            )
+        ]
+    return conversations, episodes, thoughts
 
 
 def normalize_sequence(value):
@@ -129,6 +135,22 @@ def action_distribution(action_counts):
     ]
 
 
+def thought_stats(thoughts, total_episodes):
+    counts = {}
+    for thought in thoughts:
+        phrase = str(thought or "").strip()
+        if not phrase:
+            continue
+        counts[phrase] = counts.get(phrase, 0) + 1
+    top_phrases = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:10]
+    with_thought = len(thoughts)
+    return {
+        "total_with_thought": with_thought,
+        "percentage_with_thought": (with_thought / total_episodes * 100) if total_episodes else 0,
+        "top_phrases": [{"phrase": phrase, "count": count} for phrase, count in top_phrases],
+    }
+
+
 def word_frequencies(conversations, source=None):
     counts = {}
     for conversation in conversations:
@@ -209,7 +231,7 @@ def build_report(data):
     }}
     .stats {{
       display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
+      grid-template-columns: repeat(6, minmax(0, 1fr));
       gap: 12px;
       margin-bottom: 16px;
     }}
@@ -378,6 +400,11 @@ def build_report(data):
         <div class="stat-label">Conversations by source</div>
         <div class="stat-breakdown" id="conversation-source-breakdown"></div>
       </div>
+      <div class="stat">
+        <div class="stat-label">SVO Thoughts</div>
+        <div class="stat-value" id="svo-thought-count">0</div>
+        <div class="stat-breakdown" id="svo-thought-breakdown"></div>
+      </div>
     </section>
 
     <section class="grid">
@@ -388,6 +415,10 @@ def build_report(data):
       <article class="chart-panel">
         <h2 class="chart-title">Top Agent Answer Words - All Sources</h2>
         <div class="chart-frame"><canvas id="wordChart"></canvas></div>
+      </article>
+      <article class="chart-panel">
+        <h2 class="chart-title">Top SVO Thoughts</h2>
+        <div class="chart-frame"><canvas id="svoThoughtChart"></canvas></div>
       </article>
       <article class="chart-panel">
         <h2 class="chart-title">Action Distribution</h2>
@@ -452,6 +483,19 @@ def build_report(data):
       return Number(value || 0).toFixed(2) + "%";
     }}
 
+    setText("svo-thought-count", numberFormat.format(reportData.svo_thoughts.total_with_thought));
+    const svoThoughtBreakdown = document.getElementById("svo-thought-breakdown");
+    {{
+      const row = document.createElement("div");
+      const label = document.createElement("span");
+      const value = document.createElement("span");
+      label.textContent = "with thought";
+      value.textContent = formatPercent(reportData.svo_thoughts.percentage_with_thought);
+      row.appendChild(label);
+      row.appendChild(value);
+      svoThoughtBreakdown.appendChild(row);
+    }}
+
     const sourceBreakdown = document.getElementById("conversation-source-breakdown");
     for (const item of reportData.conversation_sources) {{
       const row = document.createElement("div");
@@ -500,6 +544,22 @@ def build_report(data):
         }}]
       }},
       options: commonOptions
+    }});
+
+    new Chart(document.getElementById("svoThoughtChart"), {{
+      type: "bar",
+      data: {{
+        labels: reportData.svo_thoughts.top_phrases.map(item => item.phrase),
+        datasets: [{{
+          label: "Count",
+          data: reportData.svo_thoughts.top_phrases.map(item => item.count),
+          backgroundColor: "#7755cc"
+        }}]
+      }},
+      options: {{
+        ...commonOptions,
+        indexAxis: "y"
+      }}
     }});
 
     new Chart(document.getElementById("actionChart"), {{
@@ -613,7 +673,7 @@ def main():
     if not checkpoint_path.is_file():
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
-    conversations, episodes = read_memory(memory_path)
+    conversations, episodes, thoughts = read_memory(memory_path)
     checkpoint = load_checkpoint(checkpoint_path)
     surprise_points = sample_points(
         [
@@ -626,6 +686,7 @@ def main():
     )
     word_counts = word_frequencies(conversations)
     agent_generated_word_counts = word_frequencies(conversations, source="agent_generated")
+    svo_thought_stats = thought_stats(thoughts, len(episodes))
     emotion_labels = ["curiosity", "fear", "confidence", "confusion"]
 
     data = {
@@ -650,6 +711,7 @@ def main():
             "values": checkpoint["action_counts"],
         },
         "action_distribution": action_distribution(checkpoint["action_counts"]),
+        "svo_thoughts": svo_thought_stats,
         "surprise_series": surprise_points,
         "emotional_state": {
             "labels": emotion_labels,
