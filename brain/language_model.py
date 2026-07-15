@@ -248,12 +248,23 @@ class LanguageModelTrainer:
             if row[0] and row[0].strip()
         ]
 
-        deduped = list(dict.fromkeys(conversation_sentences + thought_sentences))
+        corpus_path = self.memory_path.parent / "corpus_agente.txt"
+        corpus_sentences = []
+        if corpus_path.is_file():
+            for line in corpus_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    corpus_sentences.append(line)
+
+        deduped = list(
+            dict.fromkeys(conversation_sentences + thought_sentences + corpus_sentences)
+        )
         random.shuffle(deduped)
 
         print(
             f"[language_model] {len(conversation_sentences)} from conversations, "
             f"{len(thought_sentences)} from episodes thoughts, "
+            f"{len(corpus_sentences)} from corpus_agente.txt, "
             f"{len(deduped)} total after dedup"
         )
 
