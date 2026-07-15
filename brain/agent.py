@@ -358,6 +358,22 @@ class Agent:
                 if self.action_counts[action_index] / total_actions > 0.7:
                     adjusted_scores[..., action_index] *= 0.1
 
+        # The cumulative check above misses recent local bias: an action can
+        # dominate 90%+ of the last 1000 steps without tripping the 70%
+        # cumulative threshold if its share of the full history is still low
+        # (e.g. early in a long run, or after a long earlier period of
+        # balanced behavior). This second backstop looks only at
+        # _recent_actions (a maxlen=1000 deque) so it reacts to short-term
+        # runaway dominance regardless of cumulative history.
+        recent_total = len(self._recent_actions)
+        if recent_total >= 100:
+            recent_counts = [0] * self.action_size
+            for a in self._recent_actions:
+                recent_counts[a] += 1
+            for action_index in range(self.action_size):
+                if recent_counts[action_index] / recent_total > 0.6:
+                    adjusted_scores[..., action_index] *= 0.1
+
         return adjusted_scores
 
     def _log_action_distribution_if_due(self) -> None:
