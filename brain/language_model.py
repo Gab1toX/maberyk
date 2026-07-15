@@ -243,11 +243,9 @@ class LanguageModelTrainer:
             if stripped.strip()
         ]
         thought_sentences = [
-            stripped
+            row[0].strip()
             for row in thought_rows
             if row[0] and row[0].strip()
-            for stripped in [self._strip_structural_prefix(row[0])]
-            if stripped.strip()
         ]
 
         deduped = list(dict.fromkeys(conversation_sentences + thought_sentences))
