@@ -296,6 +296,13 @@ class Agent:
         agent.danger_action_scores = checkpoint.get("danger_action_scores", agent.danger_action_scores)
         agent.step_count = checkpoint.get("step_count", agent.step_count)
         agent._checkpoint_dir = Path(path).parent
+        # If the memory path from checkpoint doesn't exist (e.g. Kaggle absolute
+        # path loaded locally), fall back to a path relative to the checkpoint.
+        if not agent.memory_path.exists():
+            fallback = Path(path).parent / agent.memory_path.name
+            agent.memory_path = fallback
+            agent.memory = EpisodicMemory(fallback)
+            agent.conversation_memory = ConversationMemory(fallback)
         return agent
 
     def enable_desktop(self) -> None:
