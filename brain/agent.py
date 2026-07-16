@@ -256,6 +256,9 @@ class Agent:
         map_location: str | torch.device | None = None,
     ) -> "Agent":
         checkpoint = torch.load(path, map_location=map_location)
+        memory_path = checkpoint.get("memory_path", "episodic_memory.sqlite3")
+        if not Path(memory_path).exists():
+            memory_path = str(Path(path).parent / Path(memory_path).name)
         agent = cls(
             observation_size=checkpoint["observation_size"],
             action_size=checkpoint["action_size"],
@@ -263,7 +266,7 @@ class Agent:
             learning_rate=checkpoint["learning_rate"],
             exploration_rate=checkpoint["exploration_rate"],
             device=map_location or "cpu",
-            memory_path=checkpoint.get("memory_path", "episodic_memory.sqlite3"),
+            memory_path=memory_path,
         )
         agent.policy.load_state_dict(checkpoint["policy_state_dict"])
         agent.curiosity.load_state_dict(checkpoint["curiosity_state_dict"])
@@ -296,13 +299,6 @@ class Agent:
         agent.danger_action_scores = checkpoint.get("danger_action_scores", agent.danger_action_scores)
         agent.step_count = checkpoint.get("step_count", agent.step_count)
         agent._checkpoint_dir = Path(path).parent
-        # If the memory path from checkpoint doesn't exist (e.g. Kaggle absolute
-        # path loaded locally), fall back to a path relative to the checkpoint.
-        if not agent.memory_path.exists():
-            fallback = Path(path).parent / agent.memory_path.name
-            agent.memory_path = fallback
-            agent.memory = EpisodicMemory(fallback)
-            agent.conversation_memory = ConversationMemory(fallback)
         return agent
 
     def enable_desktop(self) -> None:
