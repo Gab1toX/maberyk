@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict, deque
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, TYPE_CHECKING
 
 import re
 import torch
@@ -17,6 +17,9 @@ from brain.network import NeuralNetwork
 from brain.permissions import PermissionManager
 from brain.questions import QuestionEngine
 from brain.response import ResponseEngine
+
+if TYPE_CHECKING:
+    from actions.desktop import DesktopEnvironment
 
 
 class Agent:
@@ -78,6 +81,7 @@ class Agent:
         self.permissions = PermissionManager(
             db_path=self._checkpoint_dir / "permissions.sqlite3"
         )
+        self.desktop: "DesktopEnvironment | None" = None
         self._language_model = None
         self._language_model_tokenizer = None
         self._language_model_unavailable = False
@@ -293,6 +297,11 @@ class Agent:
         agent.step_count = checkpoint.get("step_count", agent.step_count)
         agent._checkpoint_dir = Path(path).parent
         return agent
+
+    def enable_desktop(self) -> None:
+        from actions.desktop import DesktopEnvironment
+
+        self.desktop = DesktopEnvironment(permissions=self.permissions)
 
     def close(self) -> None:
         self.memory.flush()
