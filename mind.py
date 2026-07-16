@@ -13,8 +13,8 @@ from human.interpreter import Interpreter
 
 
 ACTIONS = ("up", "down", "left", "right", "touch")
-BEHAVIORS = ("noise", "move_randomly", "change_color", "open_door", "nothing")
-COLORS = ("gray", "gold", "blue", "red", "green", "yellow", "purple")
+BEHAVIORS = ("noise", "move_randomly", "change_color", "open_door", "nothing", "reflect", "grow", "teleport", "glow")
+COLORS = ("gray", "gold", "blue", "red", "green", "yellow", "purple", "silver", "cyan")
 
 OBSERVATION_SIZE = 2 + 1 + 8 * (1 + 1 + len(BEHAVIORS) + len(COLORS))
 ACTION_SIZE = len(ACTIONS)
