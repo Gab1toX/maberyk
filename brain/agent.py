@@ -14,6 +14,7 @@ from brain.emotion import EmotionalState
 from brain.language import LanguageEngine
 from brain.memory import EpisodicMemory
 from brain.network import NeuralNetwork
+from brain.permissions import PermissionManager
 from brain.questions import QuestionEngine
 from brain.response import ResponseEngine
 
@@ -74,6 +75,9 @@ class Agent:
         # not part of agent_state.pt — it is looked up next to the checkpoint
         # and loaded lazily, only on the first human message received.
         self._checkpoint_dir = self.memory_path.parent
+        self.permissions = PermissionManager(
+            db_path=self._checkpoint_dir / "permissions.sqlite3"
+        )
         self._language_model = None
         self._language_model_tokenizer = None
         self._language_model_unavailable = False
@@ -293,6 +297,7 @@ class Agent:
     def close(self) -> None:
         self.memory.flush()
         self.memory.close()
+        self.permissions.close()
 
     def _observation_tensor(self, observation: torch.Tensor | list[float] | tuple[float, ...]) -> torch.Tensor:
         tensor = torch.as_tensor(observation, dtype=torch.float32, device=self.device)
