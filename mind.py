@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import argparse
+import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -8,6 +10,7 @@ import pygame
 import torch
 
 from brain.agent import Agent
+from entorno.desktop_env import DesktopEnv
 from entorno.room import Room
 from human.interpreter import Interpreter
 
@@ -88,6 +91,24 @@ def encode_observation(observation: dict[str, Any], room: Room) -> torch.Tensor:
         features.extend(float(behavior == known_behavior) for known_behavior in BEHAVIORS)
         features.extend(float(color == known_color) for known_color in COLORS)
 
+    return torch.tensor(features, dtype=torch.float32)
+
+
+DESKTOP_KNOWN_APPS = (
+    "chrome", "code", "spotify", "explorer", "notepad",
+    "discord", "firefox", "terminal", "word", "excel",
+)
+DESKTOP_EVENTS = ("window_changed", "idle")
+
+
+def encode_desktop_observation(observation: dict[str, Any]) -> torch.Tensor:
+    active_window = observation["active_window"]
+    features = [float(active_window == known_app) for known_app in DESKTOP_KNOWN_APPS]
+    features.append(min(len(observation["clipboard_text"]) / 200, 1.0))
+    features.extend(float(observation["event"] == known_event) for known_event in DESKTOP_EVENTS)
+    features.append(float(bool(observation["human_message"])))
+
+    features.extend([0.0] * (OBSERVATION_SIZE - len(features)))
     return torch.tensor(features, dtype=torch.float32)
 
 
@@ -182,6 +203,35 @@ def draw_heatmap_panel(
         pygame.draw.rect(surface, color, rect, border_radius=3)
         label = small_font.render(room_object.name[:1].upper(), True, TEXT)
         surface.blit(label, label.get_rect(center=rect.center))
+
+
+def draw_desktop_panel(
+    surface: pygame.Surface,
+    observation: dict[str, Any],
+    inner_voice_log: list[tuple[str, str]],
+    font: pygame.font.Font,
+    small_font: pygame.font.Font,
+) -> None:
+    panel_width = 2 * GRID_SIZE * CELL_SIZE + PANEL_GAP + 24
+    panel_rect = pygame.Rect(PANEL_PADDING - 12, 16, panel_width, 480)
+    pygame.draw.rect(surface, PANEL, panel_rect)
+
+    x0 = PANEL_PADDING
+    surface.blit(font.render("Desktop", True, TEXT), (x0, 26))
+
+    active_window = observation.get("active_window", "")
+    window_title = observation.get("window_title", "")
+    clipboard_text = observation.get("clipboard_text", "")
+
+    surface.blit(small_font.render(f"active window: {active_window}", True, TEXT), (x0, 68))
+    surface.blit(small_font.render(f"title: {window_title[:80]}", True, TEXT), (x0, 90))
+    surface.blit(small_font.render(f"clipboard: {clipboard_text[:80]}", True, MUTED_TEXT), (x0, 112))
+
+    surface.blit(small_font.render("inner voice", True, MUTED_TEXT), (x0, 150))
+    for index, (thought, dominant_emotion) in enumerate(inner_voice_log[-5:]):
+        color = EMOTION_COLORS.get(dominant_emotion, TEXT)
+        clipped = thought[-90:]
+        surface.blit(small_font.render(clipped, True, color), (x0, 172 + index * 18))
 
 
 def draw_intervention_panel(
@@ -365,6 +415,10 @@ def update_curiosity_maps(
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--desktop", action="store_true")
+    args = parser.parse_args()
+
     pygame.init()
     pygame.display.set_caption("Curiosity Mind")
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
@@ -372,13 +426,25 @@ def main() -> None:
     font = pygame.font.SysFont("consolas", 22)
     small_font = pygame.font.SysFont("consolas", 14)
 
-    room = Room()
     agent = create_agent()
     agent.enable_desktop()
-    interpreter = Interpreter()
-    observation = room.get_observation(event="started")
-    encoded_observation = encode_observation(observation, room)
 
+    if args.desktop:
+        room = None
+        interpreter = None
+        desktop_env = DesktopEnv()
+        observation = desktop_env.get_observation()
+        encoded_observation = encode_desktop_observation(observation)
+        mode = "desktop"
+    else:
+        room = Room()
+        interpreter = Interpreter()
+        desktop_env = None
+        observation = room.get_observation(event="started")
+        encoded_observation = encode_observation(observation, room)
+        mode = "grid"
+
+    next_observation = observation
     zone_surprise: dict[tuple[int, int], float] = defaultdict(float)
     object_surprise: dict[str, float] = defaultdict(float)
     input_text = ""
@@ -427,11 +493,14 @@ def main() -> None:
                         else:
                             command = input_text.strip()
                             if command:
-                                result = interpreter.interpret(command, room)
-                                room.receive_message(command)
+                                if mode == "desktop":
+                                    desktop_env.receive_message(command)
+                                else:
+                                    result = interpreter.interpret(command, room)
+                                    room.receive_message(command)
+                                    intervention_log.append(f"> {command}: {result['message']}")
                                 conversation_log.append(("You", command))
                                 conversation_log = conversation_log[-10:]
-                                intervention_log.append(f"> {command}: {result['message']}")
                             input_text = ""
                     elif event.key == pygame.K_BACKSPACE:
                         if pending_question:
@@ -450,31 +519,46 @@ def main() -> None:
                             input_text += event.unicode
 
             for _ in range(STEPS_PER_FRAME):
-                action = agent.act(encoded_observation)
-                next_observation = apply_action(room, action)
-                encoded_next_observation = encode_observation(next_observation, room)
-                stats = agent.learn(
-                    {
-                        "observation": encoded_observation,
-                        "action": action,
-                        "next_observation": encoded_next_observation,
-                        "outcome": next_observation,
-                        "was_reset": next_observation.get("event") == "reset_by_danger",
-                    }
-                )
+                if mode == "desktop":
+                    action = agent.act(encoded_observation)
+                    next_observation = desktop_env.get_observation()
+                    encoded_next_observation = encode_desktop_observation(next_observation)
+                    stats = agent.learn(
+                        {
+                            "observation": encoded_observation,
+                            "action": action,
+                            "next_observation": encoded_next_observation,
+                            "outcome": next_observation,
+                            "was_reset": False,
+                        }
+                    )
+                else:
+                    action = agent.act(encoded_observation)
+                    next_observation = apply_action(room, action)
+                    encoded_next_observation = encode_observation(next_observation, room)
+                    stats = agent.learn(
+                        {
+                            "observation": encoded_observation,
+                            "action": action,
+                            "next_observation": encoded_next_observation,
+                            "outcome": next_observation,
+                            "was_reset": next_observation.get("event") == "reset_by_danger",
+                        }
+                    )
 
                 if agent.last_response:
                     conversation_log.append(("Agent", agent.last_response))
                     conversation_log = conversation_log[-10:]
                     agent.last_response = ""
 
-                update_curiosity_maps(
-                    room=room,
-                    observation=next_observation,
-                    surprise=stats["intrinsic_reward"],
-                    zone_surprise=zone_surprise,
-                    object_surprise=object_surprise,
-                )
+                if mode == "grid":
+                    update_curiosity_maps(
+                        room=room,
+                        observation=next_observation,
+                        surprise=stats["intrinsic_reward"],
+                        zone_surprise=zone_surprise,
+                        object_surprise=object_surprise,
+                    )
                 encoded_observation = encoded_next_observation
                 step += 1
                 if step - last_save_step >= 500:
@@ -496,9 +580,18 @@ def main() -> None:
                 last_question = question
 
             screen.fill(BACKGROUND)
-            draw_grid_panel(screen, room, (PANEL_PADDING, 58), font)
             heatmap_x = PANEL_PADDING + GRID_SIZE * CELL_SIZE + PANEL_GAP
-            draw_heatmap_panel(screen, room, zone_surprise, object_surprise, (heatmap_x, 58), font, small_font)
+            if mode == "desktop":
+                draw_desktop_panel(
+                    screen,
+                    next_observation if step > 0 else observation,
+                    inner_voice_log,
+                    font,
+                    small_font,
+                )
+            else:
+                draw_grid_panel(screen, room, (PANEL_PADDING, 58), font)
+                draw_heatmap_panel(screen, room, zone_surprise, object_surprise, (heatmap_x, 58), font, small_font)
             draw_intervention_panel(screen, input_text, intervention_log, font, small_font)
             draw_conversation_panel(
                 screen,
