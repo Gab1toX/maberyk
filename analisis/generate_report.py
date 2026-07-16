@@ -142,12 +142,12 @@ def thought_stats(thoughts, total_episodes):
         if not phrase:
             continue
         counts[phrase] = counts.get(phrase, 0) + 1
-    top_phrases = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:10]
+    all_phrases = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
     with_thought = len(thoughts)
     return {
         "total_with_thought": with_thought,
         "percentage_with_thought": (with_thought / total_episodes * 100) if total_episodes else 0,
-        "top_phrases": [{"phrase": phrase, "count": count} for phrase, count in top_phrases],
+        "phrases": [{"phrase": phrase, "count": count} for phrase, count in all_phrases],
     }
 
 
@@ -366,6 +366,8 @@ def build_report(data):
     th:nth-child(1), td:nth-child(1) {{ width: 15%; }}
     th:nth-child(2), td:nth-child(2) {{ width: 32%; }}
     th:nth-child(3), td:nth-child(3) {{ width: 53%; }}
+    table.two-col th:nth-child(1), table.two-col td:nth-child(1) {{ width: 75%; }}
+    table.two-col th:nth-child(2), table.two-col td:nth-child(2) {{ width: 25%; }}
     @media (max-width: 900px) {{
       header {{ align-items: start; flex-direction: column; }}
       .stats {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
@@ -379,6 +381,8 @@ def build_report(data):
       th:nth-child(1), td:nth-child(1) {{ width: 22%; }}
       th:nth-child(2), td:nth-child(2) {{ width: 34%; }}
       th:nth-child(3), td:nth-child(3) {{ width: 44%; }}
+      table.two-col th:nth-child(1), table.two-col td:nth-child(1) {{ width: 70%; }}
+      table.two-col th:nth-child(2), table.two-col td:nth-child(2) {{ width: 30%; }}
     }}
   </style>
 </head>
@@ -417,10 +421,6 @@ def build_report(data):
         <div class="chart-frame"><canvas id="wordChart"></canvas></div>
       </article>
       <article class="chart-panel">
-        <h2 class="chart-title">Top SVO Thoughts</h2>
-        <div class="chart-frame"><canvas id="svoThoughtChart"></canvas></div>
-      </article>
-      <article class="chart-panel">
         <h2 class="chart-title">Action Distribution</h2>
         <div class="chart-with-table">
           <div class="chart-frame"><canvas id="actionChart"></canvas></div>
@@ -436,6 +436,20 @@ def build_report(data):
         <div class="chart-frame"><canvas id="emotionChart"></canvas></div>
         <div class="value-list" id="emotion-values"></div>
       </article>
+    </section>
+
+    <section class="table-panel">
+      <div class="table-head">
+        <h2>SVO Thought Frequency</h2>
+      </div>
+      <div class="table-wrap">
+        <table class="two-col">
+          <thead>
+            <tr><th>Thought</th><th>Count</th></tr>
+          </thead>
+          <tbody id="svo-thought-rows"></tbody>
+        </table>
+      </div>
     </section>
 
     <section class="table-panel">
@@ -546,21 +560,17 @@ def build_report(data):
       options: commonOptions
     }});
 
-    new Chart(document.getElementById("svoThoughtChart"), {{
-      type: "bar",
-      data: {{
-        labels: reportData.svo_thoughts.top_phrases.map(item => item.phrase),
-        datasets: [{{
-          label: "Count",
-          data: reportData.svo_thoughts.top_phrases.map(item => item.count),
-          backgroundColor: "#7755cc"
-        }}]
-      }},
-      options: {{
-        ...commonOptions,
-        indexAxis: "y"
-      }}
-    }});
+    const svoThoughtRows = document.getElementById("svo-thought-rows");
+    for (const item of reportData.svo_thoughts.phrases) {{
+      const row = document.createElement("tr");
+      const phraseCell = document.createElement("td");
+      const countCell = document.createElement("td");
+      phraseCell.textContent = item.phrase;
+      countCell.textContent = numberFormat.format(item.count);
+      row.appendChild(phraseCell);
+      row.appendChild(countCell);
+      svoThoughtRows.appendChild(row);
+    }}
 
     new Chart(document.getElementById("actionChart"), {{
       type: "pie",
