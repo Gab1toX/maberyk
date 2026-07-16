@@ -63,6 +63,10 @@ EMOTION_COLORS = {
     "confusion": (235, 210, 80),
     "confidence": (90, 210, 125),
 }
+PERMISSION_BG = (20, 28, 40)
+PERMISSION_BORDER = (255, 180, 0)
+APPROVE_COLOR = (80, 210, 120)
+DENY_COLOR = (210, 60, 60)
 
 
 def encode_observation(observation: dict[str, Any], room: Room) -> torch.Tensor:
@@ -285,6 +289,59 @@ def draw_conversation_panel(
         surface.blit(small_font.render(clipped, True, color), (x0, y0 + 144 + index * 13))
 
 
+def draw_permission_overlay(
+    surface: pygame.Surface,
+    pending: list[dict[str, Any]],
+    selected_index: int,
+    font: pygame.font.Font,
+    small_font: pygame.font.Font,
+) -> None:
+    if not pending:
+        return
+
+    dim = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+    dim.fill((0, 0, 0, 160))
+    surface.blit(dim, (0, 0))
+
+    panel_width, panel_height = 500, 300
+    panel_x = (surface.get_width() - panel_width) // 2
+    panel_y = (surface.get_height() - panel_height) // 2
+    panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
+    pygame.draw.rect(surface, PERMISSION_BG, panel_rect)
+    pygame.draw.rect(surface, PERMISSION_BORDER, panel_rect, 2)
+
+    surface.blit(font.render("Permission Request", True, PERMISSION_BORDER), (panel_x + 24, panel_y + 20))
+
+    request = pending[selected_index]
+    action_name = str(request.get("action_name", ""))
+    category = str(request.get("category", ""))
+    context = str(request.get("context", ""))[:60]
+
+    detail_lines = [
+        f"action: {action_name}",
+        f"category: {category}",
+        f"context: {context}",
+    ]
+    for index, line in enumerate(detail_lines):
+        surface.blit(small_font.render(line, True, TEXT), (panel_x + 24, panel_y + 74 + index * 26))
+
+    if len(pending) > 1:
+        counter_surface = small_font.render(f"{selected_index + 1} of {len(pending)}", True, MUTED_TEXT)
+        surface.blit(counter_surface, (panel_x + panel_width - counter_surface.get_width() - 24, panel_y + 24))
+
+    instructions = [
+        ("[ Y ] Approve", APPROVE_COLOR),
+        ("   [ N ] Deny", DENY_COLOR),
+        ("   [ Tab ] Next", MUTED_TEXT),
+    ]
+    instructions_x = panel_x + 24
+    instructions_y = panel_y + panel_height - 40
+    for text, color in instructions:
+        rendered = small_font.render(text, True, color)
+        surface.blit(rendered, (instructions_x, instructions_y))
+        instructions_x += rendered.get_width()
+
+
 def update_curiosity_maps(
     room: Room,
     observation: dict[str, Any],
@@ -317,6 +374,7 @@ def main() -> None:
 
     room = Room()
     agent = create_agent()
+    agent.enable_desktop()
     interpreter = Interpreter()
     observation = room.get_observation(event="started")
     encoded_observation = encode_observation(observation, room)
@@ -332,14 +390,30 @@ def main() -> None:
     last_question = ""
     step = 0
     last_save_step = 0
+    permission_selected = 0
     running = True
 
     try:
         while running:
+            pending = agent.permissions.get_pending()
+            if permission_selected >= len(pending):
+                permission_selected = 0
+
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
                 elif event.type == pygame.KEYDOWN:
+                    if pending:
+                        if event.key == pygame.K_y:
+                            agent.permissions.answer_pending(pending[permission_selected]["id"], True)
+                            permission_selected = 0
+                        elif event.key == pygame.K_n:
+                            agent.permissions.answer_pending(pending[permission_selected]["id"], False)
+                            permission_selected = 0
+                        elif event.key == pygame.K_TAB:
+                            permission_selected = (permission_selected + 1) % len(pending)
+                        continue
+
                     pending_question = agent.get_question()
                     if event.key == pygame.K_RETURN:
                         if pending_question:
@@ -436,6 +510,8 @@ def main() -> None:
                 small_font,
             )
             screen.blit(small_font.render(f"steps {step}", True, TEXT), (PANEL_PADDING, WINDOW_HEIGHT - 28))
+            if pending:
+                draw_permission_overlay(screen, pending, permission_selected, font, small_font)
             pygame.display.flip()
             clock.tick(FPS)
     finally:
