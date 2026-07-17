@@ -171,6 +171,7 @@ class Agent:
                 question_observation,
                 self.language,
             )
+            print(f"[DEBUG] candidate: '{candidate}' | has_answered: {self.conversation_memory.has_answered(candidate)}")
             if not self.conversation_memory.has_answered(candidate):
                 self.current_question = candidate
                 self.current_question_observation = question_observation

@@ -89,7 +89,7 @@ class QuestionEngine:
         if description_subject is None and isinstance(observation, dict):
             active_window = str(observation.get("active_window") or "").strip()
             clipboard_text = str(observation.get("clipboard_text") or "").strip()
-            if active_window:
+            if active_window and "." not in active_window:
                 description_subject = active_window
             elif clipboard_text:
                 first_word = clipboard_text.split()[0].lower() if clipboard_text.split() else None
