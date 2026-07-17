@@ -253,9 +253,9 @@ class ResponseEngine:
 
     def _verb_for_mode(self, mode: str) -> str | None:
         preferred = {
-            "assertion": ("know", "see", "sense", "feel", "learning"),
-            "question": ("ask", "explore", "see", "touch", "learning"),
-            "warning": ("fear", "sense", "see", "touch"),
+            "assertion": ("know", "sense", "feel", "learning"),
+            "question": ("ask", "explore", "touch", "learning"),
+            "warning": ("fear", "sense", "touch"),
             "exploration": ("explore", "move", "touch", "learning"),
         }
         return self._first_known(preferred.get(mode, self.VERB_WORDS))
