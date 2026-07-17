@@ -304,6 +304,7 @@ def draw_conversation_panel(
     origin: tuple[int, int],
     font: pygame.font.Font,
     small_font: pygame.font.Font,
+    scroll_offset: int = 0,
 ) -> None:
     x0, y0 = origin
     panel_width = GRID_SIZE * CELL_SIZE + 24
@@ -331,12 +332,18 @@ def draw_conversation_panel(
     else:
         surface.blit(small_font.render("waiting for a question", True, MUTED_TEXT), (x0, question_y + 4))
 
-    surface.blit(small_font.render("last 5 exchanges", True, MUTED_TEXT), (x0, y0 + 122))
-    for index, (speaker, message) in enumerate(conversation_log[-10:]):
+    surface.blit(small_font.render("history", True, MUTED_TEXT), (x0, y0 + 122))
+    list_top = y0 + 144
+    line_height = 13
+    max_visible = max(1, (panel_rect.bottom - list_top) // line_height)
+    total = len(conversation_log)
+    end = max(0, total - scroll_offset)
+    start = max(0, end - max_visible)
+    for index, (speaker, message) in enumerate(conversation_log[start:end]):
         color = QUESTION_CYAN if speaker == "Agent" else TEXT
         prefix = "Agent: " if speaker == "Agent" else "You: "
         clipped = f"{prefix}{message}"[-64:]
-        surface.blit(small_font.render(clipped, True, color), (x0, y0 + 144 + index * 13))
+        surface.blit(small_font.render(clipped, True, color), (x0, list_top + index * line_height))
 
 
 def draw_permission_overlay(
@@ -454,6 +461,7 @@ def main() -> None:
     inner_voice_log: list[tuple[str, str]] = []
     last_inner_voice = ""
     last_question = ""
+    conversation_scroll = 0
     step = 0
     last_save_step = 0
     permission_selected = 0
@@ -487,7 +495,6 @@ def main() -> None:
                             if answer:
                                 agent.receive_answer(answer)
                                 conversation_log.append(("You", answer))
-                                conversation_log = conversation_log[-10:]
                                 last_question = ""
                             answer_text = ""
                         else:
@@ -500,7 +507,6 @@ def main() -> None:
                                     room.receive_message(command)
                                     intervention_log.append(f"> {command}: {result['message']}")
                                 conversation_log.append(("You", command))
-                                conversation_log = conversation_log[-10:]
                             input_text = ""
                     elif event.key == pygame.K_BACKSPACE:
                         if pending_question:
@@ -512,6 +518,10 @@ def main() -> None:
                             answer_text = ""
                         else:
                             input_text = ""
+                    elif event.key == pygame.K_UP and not pending_question:
+                        conversation_scroll = max(0, conversation_scroll - 1)
+                    elif event.key == pygame.K_DOWN and not pending_question:
+                        conversation_scroll = min(max(0, len(conversation_log) - 1), conversation_scroll + 1)
                     elif event.unicode and event.unicode.isprintable():
                         if pending_question:
                             answer_text += event.unicode
@@ -548,7 +558,6 @@ def main() -> None:
 
                 if agent.last_response:
                     conversation_log.append(("Agent", agent.last_response))
-                    conversation_log = conversation_log[-10:]
                     agent.last_response = ""
 
                 if mode == "grid":
@@ -576,7 +585,6 @@ def main() -> None:
             question = agent.get_question()
             if question and question != last_question:
                 conversation_log.append(("Agent", question))
-                conversation_log = conversation_log[-10:]
                 last_question = question
 
             screen.fill(BACKGROUND)
@@ -601,6 +609,7 @@ def main() -> None:
                 (heatmap_x, BOTTOM_PANEL_Y),
                 font,
                 small_font,
+                conversation_scroll,
             )
             screen.blit(small_font.render(f"steps {step}", True, TEXT), (PANEL_PADDING, WINDOW_HEIGHT - 28))
             if pending:
