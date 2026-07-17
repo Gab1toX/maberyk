@@ -13,6 +13,8 @@ class ResponseEngine:
         "warning": ("danger", "fear", "dark", "unknown"),
         "exploration": ("explore", "curious", "interesting", "learning"),
     }
+    SUBJECT_WORDS = ("i", "agent", "mind", "maberyk")
+    VERB_WORDS = ("feel", "sense", "know", "learn", "explore", "move", "touch", "ask")
     # Each template arranges the same SVO components in a different order so
     # agent_generated sentences are not structurally identical (see
     # analisis/train_language_model.py, which trains on this corpus and was
