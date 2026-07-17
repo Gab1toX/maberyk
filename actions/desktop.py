@@ -17,7 +17,8 @@ class DesktopEnvironment:
 
     def __init__(self, permissions: "PermissionManager") -> None:
         self.permissions = permissions
-        self.permissions.grant_permanent("desktop.screenshot", "pc_control")
+        if not self.permissions.is_granted("desktop.screenshot"):
+            self.permissions.grant_permanent("desktop.screenshot", "pc_control")
 
         import pyautogui
 

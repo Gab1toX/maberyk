@@ -102,6 +102,9 @@ class PermissionManager:
     def is_prohibited(self, action_name: str) -> bool:
         return action_name in PROHIBITED_ACTIONS
 
+    def is_granted(self, action_name: str) -> bool:
+        return action_name in self._permanent_grants
+
     def request(
         self, action_name: str, category: str, context: str = ""
     ) -> tuple[PermissionLevel, str]:

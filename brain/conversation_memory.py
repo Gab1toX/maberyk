@@ -7,7 +7,7 @@ from typing import Any
 
 # Palabras funcionales que no tienen valor semántico para el matching
 _STOPWORDS = {
-    "does", "happen", "what", "that", "this", "with", "have", "been",
+    "what", "that", "this", "with", "have", "been",
     "will", "from", "they", "them", "their", "there", "here", "when",
     "where", "which", "would", "could", "should", "about", "into",
     "than", "then", "some", "your", "also", "just", "like", "make",
