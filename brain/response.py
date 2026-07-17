@@ -146,6 +146,7 @@ class ResponseEngine:
         "quienes",
         "cuyo",
         "cuya",
+        "see",
     }
 
     def __init__(self, vocabulary: list[str]) -> None:

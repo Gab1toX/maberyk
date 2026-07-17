@@ -96,7 +96,7 @@ class ConversationMemory:
         Y al menos 2 keywords semanticas en comun (sin stopwords).
         """
         keywords = set(self._extract_keywords(question))
-        if len(keywords) < 2:
+        if len(keywords) < 1:
             return False
 
         new_prefix = self._question_prefix(question)
