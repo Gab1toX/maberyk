@@ -12,6 +12,7 @@ _STOPWORDS = {
     "where", "which", "would", "could", "should", "about", "into",
     "than", "then", "some", "your", "also", "just", "like", "make",
     "know", "feel", "think", "look", "come", "more", "very", "much",
+    "happen", "does",
     # español
     "hace", "para", "pero", "como", "esto", "esta", "este", "algo",
     "todo", "porque", "cuando", "donde", "tiene", "puedo", "puedes",
@@ -105,7 +106,9 @@ class ConversationMemory:
             stored_keywords = set(filter(None, row["keywords"].split(",")))
             overlap = keywords & stored_keywords
             stored_prefix = self._question_prefix(row["question"])
-            if stored_prefix == new_prefix and len(overlap) >= 2:
+            question_words = {"happen", "does", "why", "what", "is", "are", "how"}
+            semantic_overlap = overlap - question_words
+            if stored_prefix == new_prefix and len(semantic_overlap) >= 1:
                 return True
 
         return False
