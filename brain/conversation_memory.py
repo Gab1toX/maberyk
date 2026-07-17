@@ -16,7 +16,7 @@ _STOPWORDS = {
     # español
     "hace", "para", "pero", "como", "esto", "esta", "este", "algo",
     "todo", "porque", "cuando", "donde", "tiene", "puedo", "puedes",
-    "eres", "soy",
+    "eres", "soy", "que", "quien", "cual", "cuanto", "cuanta",
 }
 
 
