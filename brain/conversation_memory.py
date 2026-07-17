@@ -12,7 +12,7 @@ _STOPWORDS = {
     "where", "which", "would", "could", "should", "about", "into",
     "than", "then", "some", "your", "also", "just", "like", "make",
     "know", "feel", "think", "look", "come", "more", "very", "much",
-    "happen", "does", "see"
+    "happen", "does", "see",
     # español
     "hace", "para", "pero", "como", "esto", "esta", "este", "algo",
     "todo", "porque", "cuando", "donde", "tiene", "puedo", "puedes",

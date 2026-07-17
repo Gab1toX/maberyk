@@ -543,7 +543,8 @@ class Agent:
             return None
 
         tokenizer = self._language_model_tokenizer
-        words = [word for word in generated if word not in (tokenizer.PAD, tokenizer.UNK)]
+        LANGUAGE_MODEL_STOPWORDS = {"see", "curious"}
+        words = [word for word in generated if word not in (tokenizer.PAD, tokenizer.UNK) and word not in LANGUAGE_MODEL_STOPWORDS]
         if not words:
             return None
         return " ".join(words[: self.response_engine.MAX_RESPONSE_WORDS])
