@@ -31,7 +31,7 @@ class ResponseEngine:
         "fear": {"warning": 0.4, "assertion": 0.3, "question": 0.2, "exploration": 0.1},
         "curiosity": {"exploration": 0.4, "question": 0.3, "assertion": 0.2, "warning": 0.1},
     }
-    CONNECTOR_WORDS = ("es", "son", "porque", "pero", "y", "no", "la", "el")
+    CONNECTOR_WORDS = ("es", "son", "porque", "pero", "y", "no")
     MAX_RESPONSE_WORDS = 6
     STOPWORDS = {
         "soy",
