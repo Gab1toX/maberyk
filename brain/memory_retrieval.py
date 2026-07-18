@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import string
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -33,6 +34,10 @@ class MemoryRetrieval:
         count = len(vectors)
         return {feature: value / count for feature, value in totals.items()}
 
+    def _extract_keywords(self, text: str) -> list[str]:
+        words = (word.strip(string.punctuation) for word in str(text or "").lower().split())
+        return [word for word in words if len(word) > 3]
+
     def _cosine_similarity(self, vec_a: dict[str, float], vec_b: dict[str, float]) -> float:
         if not vec_a or not vec_b:
             return 0.0
@@ -49,10 +54,40 @@ class MemoryRetrieval:
 
     def retrieve(self, human_message: str, limit: int = 5) -> str | None:
         try:
-            query_vector = self._text_to_vector(human_message)
-
             connection = sqlite3.connect(self.db_path)
             try:
+                keywords = self._extract_keywords(human_message)
+                if keywords:
+                    conditions = " OR ".join(["question LIKE ? OR answer LIKE ?"] * len(keywords))
+                    params: list[str] = []
+                    for keyword in keywords:
+                        pattern = f"%{keyword}%"
+                        params.extend([pattern, pattern])
+
+                    keyword_rows = connection.execute(
+                        f"""
+                        SELECT question, answer FROM conversations
+                        WHERE source IN ('human_taught', 'agent_generated')
+                        AND ({conditions})
+                        ORDER BY timestamp DESC LIMIT 20
+                        """,
+                        params,
+                    ).fetchall()
+
+                    keyword_set = set(keywords)
+                    best_keyword_answer: str | None = None
+                    best_overlap = 0
+
+                    for question, answer in keyword_rows:
+                        overlap = len(keyword_set & set(self._extract_keywords(question)))
+                        if overlap > best_overlap:
+                            best_overlap = overlap
+                            best_keyword_answer = answer
+
+                    if best_keyword_answer is not None and best_overlap >= 1:
+                        return best_keyword_answer
+
+                query_vector = self._text_to_vector(human_message)
                 rows = connection.execute(
                     """
                     SELECT question, answer FROM conversations
@@ -73,7 +108,7 @@ class MemoryRetrieval:
                     best_similarity = similarity
                     best_answer = answer
 
-            if best_answer is None or best_similarity < 0.05:
+            if best_answer is None or best_similarity < 0.15:
                 return None
 
             return best_answer
