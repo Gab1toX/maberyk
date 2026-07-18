@@ -121,7 +121,7 @@ def apply_action(room: Room, action_index: int) -> dict[str, Any]:
 
 def create_agent() -> Agent:
     if STATE_PATH.exists():
-        return Agent.load(STATE_PATH)
+        return Agent.load(STATE_PATH, map_location="cpu")
     return Agent(OBSERVATION_SIZE, ACTION_SIZE, hidden_layers=(128, 128))
 
 

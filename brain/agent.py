@@ -557,21 +557,7 @@ class Agent:
     def _select_response(
         self, human_message: str, response_engine_reply: str, language_model_reply: str | None
     ) -> str:
-        if not language_model_reply:
-            return response_engine_reply
-        if not response_engine_reply:
-            return language_model_reply
-
-        # "Semantically related" is approximated the same way ResponseEngine
-        # already picks its own object word: overlap between the reply and
-        # the human message, restricted to words the agent actually knows.
-        vocabulary = set(self.language.vocabulary)
-        message_words = {word for word in self._clean_words(human_message) if word in vocabulary}
-
-        language_model_overlap = len(message_words & set(self._clean_words(language_model_reply)))
-        response_engine_overlap = len(message_words & set(self._clean_words(response_engine_reply)))
-
-        if language_model_overlap > response_engine_overlap:
+        if language_model_reply:
             return language_model_reply
         return response_engine_reply
 
