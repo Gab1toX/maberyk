@@ -20,6 +20,7 @@ from brain.response import ResponseEngine
 
 if TYPE_CHECKING:
     from actions.desktop import DesktopEnvironment
+    from brain.memory_retrieval import MemoryRetrieval
 
 
 class Agent:
@@ -63,6 +64,10 @@ class Agent:
         self.conversation_memory = ConversationMemory(self.memory_path)
         self.emotional_state = EmotionalState()
         self.language = LanguageEngine()
+
+        from brain.memory_retrieval import MemoryRetrieval
+
+        self.memory_retrieval: "MemoryRetrieval" = MemoryRetrieval(self.memory_path, self.language)
         self.question_engine = QuestionEngine()
         self.response_engine = ResponseEngine(self.language.vocabulary)
         self.current_thought = ""
@@ -475,7 +480,7 @@ class Agent:
             self.emotional_state.values(),
             memory_context,
         )
-        language_model_reply = self._generate_language_model_response(human_message)
+        language_model_reply = self.memory_retrieval.retrieve(human_message)
         self.last_response = self._select_response(
             human_message, response_engine_reply, language_model_reply
         )
