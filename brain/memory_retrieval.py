@@ -67,7 +67,7 @@ class MemoryRetrieval:
                     keyword_rows = connection.execute(
                         f"""
                         SELECT question, answer FROM conversations
-                        WHERE source IN ('human_taught', 'agent_generated')
+                        WHERE source = 'human_taught'
                         AND ({conditions})
                         ORDER BY timestamp DESC LIMIT 20
                         """,
@@ -91,7 +91,7 @@ class MemoryRetrieval:
                 rows = connection.execute(
                     """
                     SELECT question, answer FROM conversations
-                    WHERE source IN ('human_taught', 'agent_generated')
+                    WHERE source = 'human_taught'
                     ORDER BY timestamp DESC LIMIT 500
                     """
                 ).fetchall()
