@@ -66,45 +66,48 @@ class AgentTokenizer:
 
 
 class AgentLanguageModel(nn.Module):
-    """Minimal word-level autoregressive LSTM. Every weight starts at random init
-    and is shaped only by the agent's own generated conversations — no attention,
-    no positional encoding, no pretrained embeddings."""
+    """Word-level autoregressive Transformer encoder (causal self-attention).
+    Every weight starts at random init and is shaped only by the agent's own
+    generated conversations — learned positional encoding, no pretrained
+    embeddings."""
 
     def __init__(
         self,
         vocab_size: int,
-        embedding_dim: int = 64,
-        hidden_dim: int = 128,
-        num_layers: int = 2,
-        dropout: float = 0.2,
+        embedding_dim: int = 128,
+        nhead: int = 4,
+        num_layers: int = 3,
+        dim_feedforward: int = 256,
+        dropout: float = 0.1,
         pad_index: int = 0,
         tokenizer: "AgentTokenizer | None" = None,
     ) -> None:
         super().__init__()
         self.vocab_size = vocab_size
         self.embedding_dim = embedding_dim
-        self.hidden_dim = hidden_dim
-        self.num_layers = num_layers
         self.pad_index = pad_index
         self.tokenizer = tokenizer
 
         self.embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=pad_index)
-        self.lstm = nn.LSTM(
-            input_size=embedding_dim,
-            hidden_size=hidden_dim,
-            num_layers=num_layers,
+        self.pos_encoding = nn.Embedding(512, embedding_dim)  # learned positional encoding
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=embedding_dim,
+            nhead=nhead,
+            dim_feedforward=dim_feedforward,
             dropout=dropout,
             batch_first=True,
         )
-        self.output_layer = nn.Linear(hidden_dim, vocab_size)
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.output_layer = nn.Linear(embedding_dim, vocab_size)
 
-    def forward(
-        self, input_ids: torch.Tensor, hidden: tuple[torch.Tensor, torch.Tensor] | None = None
-    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
-        embedded = self.embedding(input_ids)
-        output, hidden = self.lstm(embedded, hidden)
-        logits = self.output_layer(output)
-        return logits, hidden
+    def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
+        seq_len = input_ids.size(1)
+        positions = torch.arange(seq_len, device=input_ids.device).unsqueeze(0)
+        x = self.embedding(input_ids) + self.pos_encoding(positions)
+        pad_mask = input_ids == self.pad_index
+        causal_mask = nn.Transformer.generate_square_subsequent_mask(seq_len, device=input_ids.device)
+        x = self.transformer(x, mask=causal_mask, src_key_padding_mask=pad_mask, is_causal=True)
+        return self.output_layer(x)
 
     @torch.no_grad()
     def generate(
@@ -137,12 +140,12 @@ class AgentLanguageModel(nn.Module):
         prompt_index_set = set(indices)
 
         generated = list(indices)
-        input_tensor = torch.tensor([indices], dtype=torch.long, device=device)
-        logits, hidden = self.forward(input_tensor)
 
         tokens_used = 0
         first_token_resolved = False
         while tokens_used < max_new_tokens:
+            input_tensor = torch.tensor([generated], dtype=torch.long, device=device)
+            logits = self.forward(input_tensor)
             next_logits = logits[0, -1] / max(temperature, 1e-6)
             probabilities = torch.softmax(next_logits, dim=-1)
             next_index = int(torch.multinomial(probabilities, 1).item())
@@ -152,15 +155,13 @@ class AgentLanguageModel(nn.Module):
                 break
 
             if not first_token_resolved and next_index in prompt_index_set:
-                # Skip: resample from the same distribution (hidden state
-                # has not advanced) until a non-prompt word is produced or
-                # the max_new_tokens budget runs out.
+                # Skip: resample from the same distribution until a
+                # non-prompt word is produced or the max_new_tokens budget
+                # runs out.
                 continue
 
             first_token_resolved = True
             generated.append(next_index)
-            input_tensor = torch.tensor([[next_index]], dtype=torch.long, device=device)
-            logits, hidden = self.forward(input_tensor, hidden)
 
         if was_training:
             self.train()
@@ -177,10 +178,11 @@ class LanguageModelTrainer:
         self,
         memory_path: str | Path,
         max_vocab_size: int = 1024,
-        embedding_dim: int = 64,
-        hidden_dim: int = 128,
-        num_layers: int = 2,
-        dropout: float = 0.2,
+        embedding_dim: int = 128,
+        nhead: int = 4,
+        num_layers: int = 3,
+        dim_feedforward: int = 256,
+        dropout: float = 0.1,
         learning_rate: float = 1e-3,
         device: str | torch.device = "cpu",
     ) -> None:
@@ -201,8 +203,9 @@ class LanguageModelTrainer:
         self.model = AgentLanguageModel(
             vocab_size=self.tokenizer.vocab_size,
             embedding_dim=embedding_dim,
-            hidden_dim=hidden_dim,
+            nhead=nhead,
             num_layers=num_layers,
+            dim_feedforward=dim_feedforward,
             dropout=dropout,
             pad_index=self.tokenizer.pad_index,
             tokenizer=self.tokenizer,
@@ -318,7 +321,7 @@ class LanguageModelTrainer:
                 batch_sentences = self.sentences[start : start + batch_size]
                 input_ids, target_ids = self._build_batch(batch_sentences)
 
-                logits, _ = self.model(input_ids)
+                logits = self.model(input_ids)
                 loss = self.loss_fn(
                     logits.reshape(-1, self.tokenizer.vocab_size),
                     target_ids.reshape(-1),
@@ -354,8 +357,9 @@ class LanguageModelTrainer:
             {
                 "vocab_size": self.tokenizer.vocab_size,
                 "embedding_dim": self.model.embedding_dim,
-                "hidden_dim": self.model.hidden_dim,
-                "num_layers": self.model.num_layers,
+                "nhead": self.model.transformer.layers[0].self_attn.num_heads,
+                "num_layers": len(self.model.transformer.layers),
+                "dim_feedforward": self.model.transformer.layers[0].linear1.out_features,
                 "pad_index": self.tokenizer.pad_index,
                 "tokenizer_words": self.tokenizer.words,
                 "state_dict": self.model.state_dict(),
@@ -378,8 +382,9 @@ class LanguageModelTrainer:
         model = AgentLanguageModel(
             vocab_size=checkpoint["vocab_size"],
             embedding_dim=checkpoint["embedding_dim"],
-            hidden_dim=checkpoint["hidden_dim"],
+            nhead=checkpoint["nhead"],
             num_layers=checkpoint["num_layers"],
+            dim_feedforward=checkpoint["dim_feedforward"],
             pad_index=checkpoint["pad_index"],
             tokenizer=tokenizer,
         )
