@@ -84,7 +84,7 @@ class MemoryRetrieval:
                             best_overlap = overlap
                             best_keyword_answer = answer
 
-                    if best_keyword_answer is not None and best_overlap >= 1:
+                    if best_keyword_answer is not None and best_overlap >= 2:
                         return best_keyword_answer
 
                 query_vector = self._text_to_vector(human_message)
