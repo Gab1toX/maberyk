@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import argparse
 import random
+import re
 import sqlite3
 import unicodedata
+from collections import Counter
 from pathlib import Path
 from typing import Iterable
 
@@ -15,10 +17,13 @@ from torch import nn
 
 
 def normalize_text(text: str) -> str:
-    return ''.join(
-        c for c in unicodedata.normalize('NFD', text)
+    """Lowercase and strip accents, but preserve ñ (protect it around the NFD pass)."""
+    protected = str(text).replace("ñ", "\x00").replace("Ñ", "\x00")
+    stripped = ''.join(
+        c for c in unicodedata.normalize('NFD', protected)
         if unicodedata.category(c) != 'Mn'
-    ).lower()
+    )
+    return stripped.replace("\x00", "ñ").lower()
 
 
 class AgentTokenizer:
@@ -26,25 +31,28 @@ class AgentTokenizer:
 
     PAD = "<pad>"
     UNK = "<unk>"
-    SPECIAL_TOKENS = (PAD, UNK)
+    Q = "<q>"
+    A = "<a>"
+    SPECIAL_TOKENS = (PAD, UNK, Q, A)
 
-    def __init__(self, words: Iterable[str], max_vocab_size: int = 1024) -> None:
-        collected: list[str] = []
-        seen: set[str] = set()
+    def __init__(self, words: Iterable[str], max_vocab_size: int = 4096) -> None:
+        # Vocabulary is ranked by frequency (not first-seen order) so common
+        # content words win the fixed budget over one-off rarities.
+        counter = Counter(
+            word
+            for word in (str(raw).lower().strip() for raw in words)
+            if word and word not in self.SPECIAL_TOKENS
+        )
         budget = max_vocab_size - len(self.SPECIAL_TOKENS)
-        for word in words:
-            word = str(word).lower().strip()
-            if word and word not in seen:
-                seen.add(word)
-                collected.append(word)
-            if len(collected) >= budget:
-                break
+        collected = [word for word, _count in counter.most_common(budget)]
 
         self.words = list(self.SPECIAL_TOKENS) + collected
         self.word_to_index = {word: index for index, word in enumerate(self.words)}
         self.index_to_word = {index: word for word, index in self.word_to_index.items()}
         self.pad_index = self.word_to_index[self.PAD]
         self.unk_index = self.word_to_index[self.UNK]
+        self.q_index = self.word_to_index[self.Q]
+        self.a_index = self.word_to_index[self.A]
 
     @property
     def vocab_size(self) -> int:
@@ -68,10 +76,9 @@ class AgentTokenizer:
 
 
 class AgentLanguageModel(nn.Module):
-    """Word-level autoregressive Transformer encoder (causal self-attention).
+    """Word-level conditional Q->A Transformer encoder (causal self-attention).
     Every weight starts at random init and is shaped only by the agent's own
-    generated conversations — learned positional encoding, no pretrained
-    embeddings."""
+    experience — learned positional encoding, no pretrained embeddings."""
 
     def __init__(
         self,
@@ -112,54 +119,47 @@ class AgentLanguageModel(nn.Module):
         return self.output_layer(x)
 
     @torch.no_grad()
-    def generate(
+    def generate_reply(
         self,
-        prompt_words: list[str],
-        max_new_tokens: int = 8,
+        question: str,
+        max_new_tokens: int = 14,
         temperature: float = 1.0,
     ) -> list[str]:
+        """Conditional Q->A generation: encode '<q> question <a>' and sample
+        tokens until <pad>/<q> (or the model runs out of budget)."""
         if self.tokenizer is None:
-            raise ValueError("AgentLanguageModel.generate requires a tokenizer.")
+            raise ValueError("AgentLanguageModel.generate_reply requires a tokenizer.")
 
         was_training = self.training
         self.eval()
         device = next(self.parameters()).device
 
-        indices = [
-            self.tokenizer.word_to_index.get(word.lower().strip(), self.tokenizer.unk_index)
-            for word in prompt_words
-            if word.strip()
-        ] or [self.tokenizer.unk_index]
+        question_words = []
+        for word in normalize_text(question).split():
+            clean = re.sub(r"[^\w]", "", word)
+            if clean:
+                question_words.append(clean)
 
-        # Structural-artifact guard: ResponseEngine's fixed SVO pattern makes
-        # the prompt word itself (or <unk>) the dominant next token in the
-        # corpus, so left unchecked the model mostly echoes the prompt back.
-        # The first generated token is resampled away from the prompt's own
-        # token ids instead of just accepting whatever scores highest.
-        prompt_index_set = set(indices)
+        indices = [self.tokenizer.q_index]
+        indices.extend(
+            self.tokenizer.word_to_index.get(word, self.tokenizer.unk_index)
+            for word in question_words
+        )
+        indices.append(self.tokenizer.a_index)
 
         generated = list(indices)
+        stop_indices = {self.tokenizer.pad_index, self.tokenizer.q_index, self.tokenizer.a_index}
 
-        tokens_used = 0
-        first_token_resolved = False
-        while tokens_used < max_new_tokens:
+        for _ in range(max_new_tokens):
             input_tensor = torch.tensor([generated], dtype=torch.long, device=device)
             logits = self.forward(input_tensor)
             next_logits = logits[0, -1] / max(temperature, 1e-6)
             probabilities = torch.softmax(next_logits, dim=-1)
             next_index = int(torch.multinomial(probabilities, 1).item())
-            tokens_used += 1
 
-            if next_index == self.tokenizer.pad_index:
+            if next_index in stop_indices:
                 break
 
-            if not first_token_resolved and next_index in prompt_index_set:
-                # Skip: resample from the same distribution until a
-                # non-prompt word is produced or the max_new_tokens budget
-                # runs out.
-                continue
-
-            first_token_resolved = True
             generated.append(next_index)
 
         if was_training:
@@ -168,10 +168,17 @@ class AgentLanguageModel(nn.Module):
 
 
 class LanguageModelTrainer:
-    """Loads agent_generated conversations from episodic_memory.sqlite3 and trains
-    AgentLanguageModel from scratch. Weights are saved separately from agent_state.pt."""
+    """Loads human_taught Q/A pairs (primary) and corpus/thought sentences
+    (secondary, for fluency) from episodic_memory.sqlite3 and trains a
+    conditional AgentLanguageModel from scratch. Weights are saved separately
+    from agent_state.pt. agent_generated conversations are excluded — they are
+    the model's own past output, not ground truth to imitate."""
 
-    MAX_LEN = 16
+    MAX_LEN = 32
+    VAL_FRACTION = 0.1
+    VAL_SEED = 1234
+    EARLY_STOP_PATIENCE = 3
+    EARLY_STOP_MIN_DELTA = 0.01
 
     def __init__(
         self,
@@ -188,15 +195,18 @@ class LanguageModelTrainer:
         self.memory_path = Path(memory_path)
         self.device = torch.device(device)
 
-        self.sentences = self._load_agent_generated_sentences()
-        if not self.sentences:
+        self.samples = self._load_training_samples()
+        if not self.samples:
             raise ValueError(
-                f"No 'agent_generated' conversations found in {self.memory_path}. "
-                "This scaffold trains exclusively on the agent's own generated "
-                "language — human_taught and unknown sources are excluded."
+                f"No training samples found in {self.memory_path}. "
+                "This scaffold trains primarily on human_taught question/answer "
+                "pairs, with corpus_agente.txt and episode thoughts mixed in for "
+                "fluency — agent_generated and unknown sources are excluded."
             )
 
-        vocabulary_words = self._collect_vocabulary(self.sentences)
+        self.train_samples, self.val_samples = self._split_train_val(self.samples)
+
+        vocabulary_words = self._collect_vocabulary(self.samples)
         self.tokenizer = AgentTokenizer(vocabulary_words, max_vocab_size=max_vocab_size)
 
         self.model = AgentLanguageModel(
@@ -215,21 +225,32 @@ class LanguageModelTrainer:
         self._print_startup_summary()
 
     def _print_startup_summary(self) -> None:
-        sample_size = min(5, len(self.sentences))
-        sample = random.sample(self.sentences, sample_size)
+        sample_size = min(5, len(self.samples))
+        sample = random.sample(self.samples, sample_size)
         print(
-            f"[language_model] loaded {len(self.sentences)} agent_generated sentences, "
+            f"[language_model] loaded {len(self.samples)} samples "
+            f"({len(self.train_samples)} train / {len(self.val_samples)} val), "
             f"vocab size {self.tokenizer.vocab_size}"
         )
-        print("[language_model] sample sentences:")
-        for sentence in sample:
-            print(f"  - {sentence}")
+        print("[language_model] sample training rows:")
+        for row in sample:
+            print(f"  - {row}")
 
-    def _load_agent_generated_sentences(self) -> list[str]:
+    def _split_train_val(self, samples: list[str]) -> tuple[list[str], list[str]]:
+        shuffled = list(samples)
+        random.Random(self.VAL_SEED).shuffle(shuffled)
+        val_size = int(len(shuffled) * self.VAL_FRACTION) if len(shuffled) >= 10 else 0
+        val_samples = shuffled[:val_size]
+        train_samples = shuffled[val_size:]
+        if not train_samples:
+            train_samples, val_samples = shuffled, []
+        return train_samples, val_samples
+
+    def _load_training_samples(self) -> list[str]:
         connection = sqlite3.connect(self.memory_path)
         try:
-            conversation_rows = connection.execute(
-                "SELECT answer FROM conversations WHERE source = 'agent_generated'"
+            pair_rows = connection.execute(
+                "SELECT question, answer FROM conversations WHERE source = 'human_taught'"
             ).fetchall()
             thought_rows = connection.execute(
                 "SELECT thought FROM episodes WHERE thought != '' AND thought IS NOT NULL"
@@ -237,119 +258,129 @@ class LanguageModelTrainer:
         finally:
             connection.close()
 
-        conversation_sentences = [
-            normalize_text(stripped)
-            for row in conversation_rows
-            if row[0] and row[0].strip()
-            for stripped in [self._strip_structural_prefix(row[0])]
-            if stripped.strip()
-        ]
-        thought_sentences = [
+        pair_samples = list(dict.fromkeys(
+            f"{AgentTokenizer.Q} {normalize_text(question)} {AgentTokenizer.A} {normalize_text(answer)}"
+            for question, answer in pair_rows
+            if question and question.strip() and answer and answer.strip()
+        ))
+
+        # Episode thoughts run ~170k rows but very few are unique — dedupe
+        # first, then cap at 2x the pair count so fluency data can't drown
+        # out the Q/A signal the model actually needs to learn.
+        thought_sentences = list(dict.fromkeys(
             normalize_text(row[0].strip())
             for row in thought_rows
             if row[0] and row[0].strip()
-        ]
+        ))
+        thought_cap = len(pair_samples) * 2
+        if len(thought_sentences) > thought_cap:
+            thought_sentences = random.sample(thought_sentences, thought_cap)
+        thought_samples = [f"{AgentTokenizer.A} {sentence}" for sentence in thought_sentences]
 
         corpus_path = self.memory_path.parent / "corpus_agente.txt"
-        corpus_sentences = []
+        corpus_samples = []
         if corpus_path.is_file():
             for line in corpus_path.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
                 if line and not line.startswith("#"):
-                    corpus_sentences.append(normalize_text(line))
+                    corpus_samples.append(f"{AgentTokenizer.A} {normalize_text(line)}")
 
-        deduped = list(
-            dict.fromkeys(conversation_sentences + thought_sentences + corpus_sentences)
-        )
-        random.shuffle(deduped)
+        plain_samples = list(dict.fromkeys(thought_samples + corpus_samples))
+        all_samples = pair_samples + plain_samples
+        random.shuffle(all_samples)
 
         print(
-            f"[language_model] {len(conversation_sentences)} from conversations, "
-            f"{len(thought_sentences)} from episodes thoughts, "
-            f"{len(corpus_sentences)} from corpus_agente.txt, "
-            f"{len(deduped)} total after dedup"
+            f"[language_model] {len(pair_samples)} human_taught q/a pairs, "
+            f"{len(thought_samples)} deduped episode thoughts (capped at {thought_cap}), "
+            f"{len(corpus_samples)} from corpus_agente.txt, "
+            f"{len(all_samples)} total samples"
         )
 
-        return deduped
+        return all_samples
 
-    def _strip_structural_prefix(self, sentence: str) -> str:
-        # ResponseEngine emits a fixed SVO pattern, so "curious"/"see" tend to
-        # open the sentence as structural artifacts rather than content words.
-        # Drop those two tokens wherever they occur in the first 4 words;
-        # every other word is preserved regardless of sentence length.
-        words = sentence.split()
-        prefix_len = min(4, len(words))
-        kept = [
-            word
-            for word in words[:prefix_len]
-            if word.lower() not in ("curious", "see", "safe")
-        ]
-        return " ".join(kept + words[prefix_len:])
-
-    def _collect_vocabulary(self, sentences: list[str]) -> list[str]:
+    def _collect_vocabulary(self, samples: list[str]) -> list[str]:
         words: list[str] = []
-        seen: set[str] = set()
-        for sentence in sentences:
-            for word in sentence.lower().split():
-                if word not in seen:
-                    seen.add(word)
-                    words.append(word)
+        for sample in samples:
+            words.extend(sample.lower().split())
         return words
 
-    def _build_batch(self, sentences: list[str]) -> tuple[torch.Tensor, torch.Tensor]:
+    def _build_batch(self, samples: list[str]) -> tuple[torch.Tensor, torch.Tensor]:
         input_batch = []
         target_batch = []
-        for sentence in sentences:
-            encoded = self.tokenizer.encode(sentence, max_len=self.MAX_LEN + 1)
+        for sample in samples:
+            encoded = self.tokenizer.encode(sample, max_len=self.MAX_LEN + 1)
+            target = encoded[1:]
+            # Loss is computed only on tokens after <a> — mask everything up
+            # to and including the <a> marker (the prompt) with pad_index so
+            # the model is never trained to reproduce the question back.
+            if self.tokenizer.a_index in encoded:
+                a_pos = encoded.index(self.tokenizer.a_index)
+                for i in range(min(a_pos, len(target))):
+                    target[i] = self.tokenizer.pad_index
             input_batch.append(encoded[:-1])
-            target_batch.append(encoded[1:])
+            target_batch.append(target)
         return (
             torch.tensor(input_batch, dtype=torch.long, device=self.device),
             torch.tensor(target_batch, dtype=torch.long, device=self.device),
         )
 
-    def train(self, epochs: int = 10, batch_size: int = 16) -> list[float]:
-        self.model.train()
-        epoch_losses = []
-        best_loss = float("inf")
-        stale_epochs = 0
-        for epoch in range(epochs):
-            total_loss = 0.0
-            batch_count = 0
-            for start in range(0, len(self.sentences), batch_size):
-                batch_sentences = self.sentences[start : start + batch_size]
-                input_ids, target_ids = self._build_batch(batch_sentences)
+    def _run_epoch(self, samples: list[str], batch_size: int, train: bool) -> float:
+        self.model.train(train)
+        total_loss = 0.0
+        batch_count = 0
+        for start in range(0, len(samples), batch_size):
+            batch = samples[start : start + batch_size]
+            input_ids, target_ids = self._build_batch(batch)
 
+            with torch.set_grad_enabled(train):
                 logits = self.model(input_ids)
                 loss = self.loss_fn(
                     logits.reshape(-1, self.tokenizer.vocab_size),
                     target_ids.reshape(-1),
                 )
 
+            if train:
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
 
-                total_loss += loss.item()
-                batch_count += 1
+            total_loss += loss.item()
+            batch_count += 1
 
-            average_loss = total_loss / max(batch_count, 1)
-            epoch_losses.append(average_loss)
-            print(f"[language_model] epoch {epoch + 1}/{epochs} — loss {average_loss:.4f}")
+        return total_loss / max(batch_count, 1)
 
-            if best_loss - average_loss > 0.01:
-                best_loss = average_loss
-                stale_epochs = 0
+    def train(self, epochs: int = 10, batch_size: int = 16) -> list[float]:
+        train_losses = []
+        best_val_loss = float("inf")
+        stale_epochs = 0
+        for epoch in range(epochs):
+            random.shuffle(self.train_samples)
+            train_loss = self._run_epoch(self.train_samples, batch_size, train=True)
+            train_losses.append(train_loss)
+
+            if self.val_samples:
+                val_loss = self._run_epoch(self.val_samples, batch_size, train=False)
+                print(
+                    f"[language_model] epoch {epoch + 1}/{epochs} — "
+                    f"train loss {train_loss:.4f}, val loss {val_loss:.4f}"
+                )
+                if best_val_loss - val_loss > self.EARLY_STOP_MIN_DELTA:
+                    best_val_loss = val_loss
+                    stale_epochs = 0
+                else:
+                    stale_epochs += 1
+                    if stale_epochs >= self.EARLY_STOP_PATIENCE:
+                        print(
+                            f"[language_model] early stopping at epoch {epoch + 1}/{epochs} "
+                            f"— val loss did not improve by more than {self.EARLY_STOP_MIN_DELTA} "
+                            f"for {self.EARLY_STOP_PATIENCE} consecutive epochs"
+                        )
+                        break
             else:
-                stale_epochs += 1
-                if stale_epochs >= 3:
-                    print(
-                        f"[language_model] early stopping at epoch {epoch + 1}/{epochs} "
-                        "— loss did not improve by more than 0.01 for 3 consecutive epochs"
-                    )
-                    break
+                print(f"[language_model] epoch {epoch + 1}/{epochs} — train loss {train_loss:.4f} (no val split)")
 
-        return epoch_losses
+        self.model.train()
+        return train_losses
 
     def save(self, path: str | Path) -> None:
         torch.save(
@@ -378,6 +409,15 @@ class LanguageModelTrainer:
         tokenizer.pad_index = checkpoint["pad_index"]
         tokenizer.unk_index = tokenizer.word_to_index[AgentTokenizer.UNK]
 
+        if AgentTokenizer.Q not in tokenizer.word_to_index or AgentTokenizer.A not in tokenizer.word_to_index:
+            raise ValueError(
+                f"Checkpoint at {path} predates the conditional <q>/<a> Q->A model "
+                "and has no <q>/<a> tokens in its vocabulary. Retrain with the "
+                "current brain/language_model.py to produce a compatible checkpoint."
+            )
+        tokenizer.q_index = tokenizer.word_to_index[AgentTokenizer.Q]
+        tokenizer.a_index = tokenizer.word_to_index[AgentTokenizer.A]
+
         model = AgentLanguageModel(
             vocab_size=checkpoint["vocab_size"],
             embedding_dim=checkpoint["embedding_dim"],
@@ -393,7 +433,7 @@ class LanguageModelTrainer:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Train the scaffold AgentLanguageModel on agent_generated conversations."
+        description="Train the scaffold AgentLanguageModel on human_taught Q/A pairs."
     )
     parser.add_argument(
         "--memory", required=True, type=Path, help="Path to episodic_memory.sqlite3"
@@ -401,16 +441,31 @@ def main() -> None:
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--output", type=Path, default=Path("language_model.pt"))
+    parser.add_argument("--temperature", type=float, default=0.8)
+    parser.add_argument(
+        "--sample-question", type=str, default="que ves",
+        help="Question used for the post-training sample generations.",
+    )
     args = parser.parse_args()
 
-    trainer = LanguageModelTrainer(args.memory)
-    print(
-        f"[language_model] training on {len(trainer.sentences)} agent_generated "
-        f"sentences, vocab size {trainer.tokenizer.vocab_size}"
-    )
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"[language_model] using device: {device}")
+
+    trainer = LanguageModelTrainer(args.memory, device=device)
     trainer.train(epochs=args.epochs, batch_size=args.batch_size)
     trainer.save(args.output)
     print(f"[language_model] weights saved to {args.output}")
+
+    print(
+        f"[language_model] sample generations (question='{args.sample_question}', "
+        f"temperature={args.temperature}):"
+    )
+    for _ in range(5):
+        words = trainer.model.generate_reply(
+            args.sample_question,
+            temperature=args.temperature,
+        )
+        print(f"  - {' '.join(words)}")
 
 
 if __name__ == "__main__":

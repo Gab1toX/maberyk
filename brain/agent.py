@@ -545,16 +545,15 @@ class Agent:
             return None
 
         try:
-            generated = self._language_model.generate(
-                prompt_words, max_new_tokens=10, temperature=0.8
+            generated = self._language_model.generate_reply(
+                human_message, temperature=0.8
             )
         except Exception as exc:
             print(f"[language_model] generation failed: {exc}")
             return None
 
         tokenizer = self._language_model_tokenizer
-        LANGUAGE_MODEL_STOPWORDS = {"see", "curious"}
-        words = [word for word in generated if word not in (tokenizer.PAD, tokenizer.UNK) and word not in LANGUAGE_MODEL_STOPWORDS]
+        words = [word for word in generated if word not in (tokenizer.PAD, tokenizer.UNK)]
         if not words:
             return None
         return " ".join(words[: self.response_engine.MAX_RESPONSE_WORDS])
@@ -579,8 +578,10 @@ class Agent:
         return reply, branch
 
     def _clean_words(self, text: str) -> list[str]:
+        from brain.language_model import normalize_text
+
         words = []
-        for word in str(text or "").lower().split():
+        for word in normalize_text(str(text or "")).split():
             clean = re.sub(r"[^\w]", "", word)
             if clean:
                 words.append(clean)
