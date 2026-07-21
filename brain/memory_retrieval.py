@@ -36,7 +36,7 @@ class MemoryRetrieval:
 
     def _extract_keywords(self, text: str) -> list[str]:
         words = (word.strip(string.punctuation) for word in str(text or "").lower().split())
-        return [word for word in words if len(word) > 3]
+        return [word for word in words if len(word) > 4]
 
     def _cosine_similarity(self, vec_a: dict[str, float], vec_b: dict[str, float]) -> float:
         if not vec_a or not vec_b:

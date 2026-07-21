@@ -541,7 +541,7 @@ class Agent:
 
         try:
             generated = self._language_model.generate(
-                prompt_words, max_new_tokens=self.response_engine.MAX_RESPONSE_WORDS, temperature=0.8
+                prompt_words, max_new_tokens=10, temperature=0.8
             )
         except Exception as exc:
             print(f"[language_model] generation failed: {exc}")
