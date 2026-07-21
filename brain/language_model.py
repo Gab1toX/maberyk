@@ -66,12 +66,6 @@ class AgentTokenizer:
             if int(index) != self.pad_index
         ]
 
-    def most_common_token(self) -> str:
-        """First non-special vocabulary word (index 2, since 0=PAD, 1=UNK)."""
-        if len(self.words) > len(self.SPECIAL_TOKENS):
-            return self.words[len(self.SPECIAL_TOKENS)]
-        return self.UNK
-
 
 class AgentLanguageModel(nn.Module):
     """Word-level autoregressive Transformer encoder (causal self-attention).
@@ -131,11 +125,8 @@ class AgentLanguageModel(nn.Module):
         self.eval()
         device = next(self.parameters()).device
 
-        fallback_index = self.tokenizer.word_to_index.get(
-            self.tokenizer.most_common_token(), self.tokenizer.unk_index
-        )
         indices = [
-            self.tokenizer.word_to_index.get(word.lower().strip(), fallback_index)
+            self.tokenizer.word_to_index.get(word.lower().strip(), self.tokenizer.unk_index)
             for word in prompt_words
             if word.strip()
         ] or [self.tokenizer.unk_index]
@@ -173,7 +164,7 @@ class AgentLanguageModel(nn.Module):
 
         if was_training:
             self.train()
-        return self.tokenizer.decode(generated)
+        return self.tokenizer.decode(generated[len(indices):])
 
 
 class LanguageModelTrainer:

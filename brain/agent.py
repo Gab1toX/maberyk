@@ -474,20 +474,25 @@ class Agent:
         # Retrieve conversation context to inform the response
         memory_context = self.conversation_memory.recall(human_message, limit=2)
 
+        retrieved_reply = self.memory_retrieval.retrieve(human_message)
+        lm_reply = self._generate_language_model_response(human_message)
         # Generate response using enriched vocabulary and emotional state
-        response_engine_reply = self.response_engine.generate(
+        engine_reply = self.response_engine.generate(
             human_message,
             self.emotional_state.values(),
             memory_context,
         )
-        language_model_reply = self.memory_retrieval.retrieve(human_message)
-        self.last_response = self._select_response(
-            human_message, response_engine_reply, language_model_reply
+        self.last_response, branch = self._select_response(
+            human_message, retrieved_reply, lm_reply, engine_reply
         )
 
         # Store the exchange and reinforce language associations
         if self.last_response:
-            self.conversation_memory.store(human_message, self.last_response, source="agent_generated")
+            # Verbatim human_taught echoes must not pollute the agent-voice
+            # training corpus — only language_model/response_engine replies
+            # count as the agent's own generated language.
+            source = "retrieved" if branch == "retrieved" else "agent_generated"
+            self.conversation_memory.store(human_message, self.last_response, source=source)
             self.language.learn(
                 human_message,
                 self.emotional_state,
@@ -555,11 +560,23 @@ class Agent:
         return " ".join(words[: self.response_engine.MAX_RESPONSE_WORDS])
 
     def _select_response(
-        self, human_message: str, response_engine_reply: str, language_model_reply: str | None
-    ) -> str:
-        if language_model_reply:
-            return language_model_reply
-        return response_engine_reply
+        self,
+        human_message: str,
+        retrieved_reply: str | None,
+        lm_reply: str | None,
+        engine_reply: str,
+    ) -> tuple[str, str]:
+        if retrieved_reply:
+            branch = "retrieved"
+            reply = retrieved_reply
+        elif lm_reply:
+            branch = "language_model"
+            reply = lm_reply
+        else:
+            branch = "response_engine"
+            reply = engine_reply
+        print(f"[response] branch={branch}")
+        return reply, branch
 
     def _clean_words(self, text: str) -> list[str]:
         words = []
