@@ -6,11 +6,19 @@ from __future__ import annotations
 import argparse
 import random
 import sqlite3
+import unicodedata
 from pathlib import Path
 from typing import Iterable
 
 import torch
 from torch import nn
+
+
+def normalize_text(text: str) -> str:
+    return ''.join(
+        c for c in unicodedata.normalize('NFD', text)
+        if unicodedata.category(c) != 'Mn'
+    ).lower()
 
 
 class AgentTokenizer:
@@ -177,7 +185,7 @@ class LanguageModelTrainer:
     def __init__(
         self,
         memory_path: str | Path,
-        max_vocab_size: int = 1024,
+        max_vocab_size: int = 4096,
         embedding_dim: int = 128,
         nhead: int = 4,
         num_layers: int = 3,
@@ -239,14 +247,14 @@ class LanguageModelTrainer:
             connection.close()
 
         conversation_sentences = [
-            stripped
+            normalize_text(stripped)
             for row in conversation_rows
             if row[0] and row[0].strip()
             for stripped in [self._strip_structural_prefix(row[0])]
             if stripped.strip()
         ]
         thought_sentences = [
-            row[0].strip()
+            normalize_text(row[0].strip())
             for row in thought_rows
             if row[0] and row[0].strip()
         ]
@@ -257,7 +265,7 @@ class LanguageModelTrainer:
             for line in corpus_path.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
                 if line and not line.startswith("#"):
-                    corpus_sentences.append(line)
+                    corpus_sentences.append(normalize_text(line))
 
         deduped = list(
             dict.fromkeys(conversation_sentences + thought_sentences + corpus_sentences)
