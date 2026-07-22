@@ -25,7 +25,7 @@ class ConversationMemory:
 
     def __init__(self, database_path: str | Path) -> None:
         self.database_path = Path(database_path)
-        self.connection = sqlite3.connect(self.database_path)
+        self.connection = sqlite3.connect(self.database_path, check_same_thread=False)
         self.connection.row_factory = sqlite3.Row
         columns = [
             row["name"]

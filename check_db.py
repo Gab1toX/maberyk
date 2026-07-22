@@ -1,9 +1,5 @@
 import sqlite3
-conn = sqlite3.connect('episodic_memory.sqlite3')
-tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
-for t in tables:
-    print(f'Tabla: {t[0]}')
-    cols = conn.execute(f"PRAGMA table_info({t[0]})").fetchall()
-    for c in cols:
-        print(f'  {c[1]} ({c[2]})')
-conn.close()
+c = sqlite3.connect('episodic_memory.sqlite3')
+print('pares unicos:', c.execute("SELECT COUNT(*) FROM (SELECT DISTINCT question, answer FROM conversations WHERE source='human_taught')").fetchone())
+print('thoughts unicos:', c.execute("SELECT COUNT(DISTINCT thought) FROM episodes WHERE thought != ''").fetchone())
+print('seed presente:', c.execute("SELECT COUNT(*) FROM conversations WHERE question='quien eres' AND source='human_taught'").fetchone())

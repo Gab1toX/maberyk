@@ -33,9 +33,10 @@ class AgentTokenizer:
     UNK = "<unk>"
     Q = "<q>"
     A = "<a>"
-    SPECIAL_TOKENS = (PAD, UNK, Q, A)
+    END = "<end>"
+    SPECIAL_TOKENS = (PAD, UNK, Q, A, END)
 
-    def __init__(self, words: Iterable[str], max_vocab_size: int = 4096) -> None:
+    def __init__(self, words: Iterable[str], max_vocab_size: int = 8192) -> None:
         # Vocabulary is ranked by frequency (not first-seen order) so common
         # content words win the fixed budget over one-off rarities.
         counter = Counter(
@@ -53,6 +54,7 @@ class AgentTokenizer:
         self.unk_index = self.word_to_index[self.UNK]
         self.q_index = self.word_to_index[self.Q]
         self.a_index = self.word_to_index[self.A]
+        self.end_index = self.word_to_index[self.END]
 
     @property
     def vocab_size(self) -> int:
@@ -126,7 +128,8 @@ class AgentLanguageModel(nn.Module):
         temperature: float = 1.0,
     ) -> list[str]:
         """Conditional Q->A generation: encode '<q> question <a>' and sample
-        tokens until <pad>/<q> (or the model runs out of budget)."""
+        tokens until <pad>/<q>/<end> (or the model runs out of budget). <unk>
+        is banned from being sampled so replies never surface it directly."""
         if self.tokenizer is None:
             raise ValueError("AgentLanguageModel.generate_reply requires a tokenizer.")
 
@@ -148,12 +151,18 @@ class AgentLanguageModel(nn.Module):
         indices.append(self.tokenizer.a_index)
 
         generated = list(indices)
-        stop_indices = {self.tokenizer.pad_index, self.tokenizer.q_index, self.tokenizer.a_index}
+        stop_indices = {
+            self.tokenizer.pad_index,
+            self.tokenizer.q_index,
+            self.tokenizer.a_index,
+            self.tokenizer.end_index,
+        }
 
         for _ in range(max_new_tokens):
             input_tensor = torch.tensor([generated], dtype=torch.long, device=device)
             logits = self.forward(input_tensor)
             next_logits = logits[0, -1] / max(temperature, 1e-6)
+            next_logits[self.tokenizer.unk_index] = float("-inf")
             probabilities = torch.softmax(next_logits, dim=-1)
             next_index = int(torch.multinomial(probabilities, 1).item())
 
@@ -183,7 +192,7 @@ class LanguageModelTrainer:
     def __init__(
         self,
         memory_path: str | Path,
-        max_vocab_size: int = 4096,
+        max_vocab_size: int = 8192,
         embedding_dim: int = 128,
         nhead: int = 4,
         num_layers: int = 3,
@@ -195,6 +204,10 @@ class LanguageModelTrainer:
         self.memory_path = Path(memory_path)
         self.device = torch.device(device)
 
+        # self.samples stays the UNIQUE deduped pool — the train/val split is
+        # built from it first so val can never contain a duplicate of a
+        # sample that also landed in train. Oversampling only ever touches
+        # train_samples afterwards.
         self.samples = self._load_training_samples()
         if not self.samples:
             raise ValueError(
@@ -205,9 +218,11 @@ class LanguageModelTrainer:
             )
 
         self.train_samples, self.val_samples = self._split_train_val(self.samples)
+        self.train_samples = self._oversample_pairs(self.train_samples)
 
         vocabulary_words = self._collect_vocabulary(self.samples)
         self.tokenizer = AgentTokenizer(vocabulary_words, max_vocab_size=max_vocab_size)
+        self._print_vocab_coverage(vocabulary_words)
 
         self.model = AgentLanguageModel(
             vocab_size=self.tokenizer.vocab_size,
@@ -228,13 +243,30 @@ class LanguageModelTrainer:
         sample_size = min(5, len(self.samples))
         sample = random.sample(self.samples, sample_size)
         print(
-            f"[language_model] loaded {len(self.samples)} samples "
-            f"({len(self.train_samples)} train / {len(self.val_samples)} val), "
-            f"vocab size {self.tokenizer.vocab_size}"
+            f"[language_model] loaded {len(self.samples)} unique samples "
+            f"({len(self.train_samples)} train after pair oversampling / "
+            f"{len(self.val_samples)} val), vocab size {self.tokenizer.vocab_size}"
         )
         print("[language_model] sample training rows:")
         for row in sample:
             print(f"  - {row}")
+
+    def _print_vocab_coverage(self, vocabulary_words: list[str]) -> None:
+        unique_words = {
+            word for word in (str(raw).lower().strip() for raw in vocabulary_words) if word
+        }
+        dropped = sorted(unique_words - set(self.tokenizer.word_to_index))
+        covered = len(unique_words) - len(dropped)
+        print(
+            f"[language_model] vocab coverage: {covered}/{len(unique_words)} unique corpus "
+            f"words fit in vocab size {self.tokenizer.vocab_size}"
+        )
+        if dropped:
+            print(
+                f"[language_model] WARNING: {len(dropped)} unique word(s) dropped from the "
+                "vocabulary and will map to <unk> during training — raise max_vocab_size to "
+                f"reach zero <unk>. sample dropped words: {dropped[:20]}"
+            )
 
     def _split_train_val(self, samples: list[str]) -> tuple[list[str], list[str]]:
         shuffled = list(samples)
@@ -245,6 +277,17 @@ class LanguageModelTrainer:
         if not train_samples:
             train_samples, val_samples = shuffled, []
         return train_samples, val_samples
+
+    def _oversample_pairs(self, samples: list[str]) -> list[str]:
+        # Q/A pairs start with "<q> "; repeating them 3x inside the already
+        # dedup-safe train split (never val) pushes Q->A signal from ~18% to
+        # ~40% of training batches without risking a train/val leak.
+        q_prefix = f"{AgentTokenizer.Q} "
+        pairs = [sample for sample in samples if sample.startswith(q_prefix)]
+        plain = [sample for sample in samples if not sample.startswith(q_prefix)]
+        oversampled = plain + pairs * 3
+        random.shuffle(oversampled)
+        return oversampled
 
     def _load_training_samples(self) -> list[str]:
         connection = sqlite3.connect(self.memory_path)
@@ -259,7 +302,8 @@ class LanguageModelTrainer:
             connection.close()
 
         pair_samples = list(dict.fromkeys(
-            f"{AgentTokenizer.Q} {normalize_text(question)} {AgentTokenizer.A} {normalize_text(answer)}"
+            f"{AgentTokenizer.Q} {normalize_text(question)} {AgentTokenizer.A} "
+            f"{normalize_text(answer)} {AgentTokenizer.END}"
             for question, answer in pair_rows
             if question and question.strip() and answer and answer.strip()
         ))
@@ -275,7 +319,9 @@ class LanguageModelTrainer:
         thought_cap = len(pair_samples) * 2
         if len(thought_sentences) > thought_cap:
             thought_sentences = random.sample(thought_sentences, thought_cap)
-        thought_samples = [f"{AgentTokenizer.A} {sentence}" for sentence in thought_sentences]
+        thought_samples = [
+            f"{AgentTokenizer.A} {sentence} {AgentTokenizer.END}" for sentence in thought_sentences
+        ]
 
         corpus_path = self.memory_path.parent / "corpus_agente.txt"
         corpus_samples = []
@@ -283,7 +329,7 @@ class LanguageModelTrainer:
             for line in corpus_path.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
                 if line and not line.startswith("#"):
-                    corpus_samples.append(f"{AgentTokenizer.A} {normalize_text(line)}")
+                    corpus_samples.append(f"{AgentTokenizer.A} {normalize_text(line)} {AgentTokenizer.END}")
 
         plain_samples = list(dict.fromkeys(thought_samples + corpus_samples))
         all_samples = pair_samples + plain_samples
@@ -312,7 +358,10 @@ class LanguageModelTrainer:
             target = encoded[1:]
             # Loss is computed only on tokens after <a> — mask everything up
             # to and including the <a> marker (the prompt) with pad_index so
-            # the model is never trained to reproduce the question back.
+            # the model is never trained to reproduce the question back. The
+            # trailing <end> token sits well after a_pos (it's part of the
+            # answer/content, not the prompt) so it is never masked here and
+            # is trained like any other answer token.
             if self.tokenizer.a_index in encoded:
                 a_pos = encoded.index(self.tokenizer.a_index)
                 for i in range(min(a_pos, len(target))):
@@ -409,14 +458,18 @@ class LanguageModelTrainer:
         tokenizer.pad_index = checkpoint["pad_index"]
         tokenizer.unk_index = tokenizer.word_to_index[AgentTokenizer.UNK]
 
-        if AgentTokenizer.Q not in tokenizer.word_to_index or AgentTokenizer.A not in tokenizer.word_to_index:
+        required_tokens = (AgentTokenizer.Q, AgentTokenizer.A, AgentTokenizer.END)
+        missing_tokens = [token for token in required_tokens if token not in tokenizer.word_to_index]
+        if missing_tokens:
             raise ValueError(
-                f"Checkpoint at {path} predates the conditional <q>/<a> Q->A model "
-                "and has no <q>/<a> tokens in its vocabulary. Retrain with the "
-                "current brain/language_model.py to produce a compatible checkpoint."
+                f"Checkpoint at {path} predates the current conditional Q->A model "
+                f"and is missing special token(s) {missing_tokens} from its vocabulary. "
+                "Retrain with the current brain/language_model.py to produce a "
+                "compatible checkpoint."
             )
         tokenizer.q_index = tokenizer.word_to_index[AgentTokenizer.Q]
         tokenizer.a_index = tokenizer.word_to_index[AgentTokenizer.A]
+        tokenizer.end_index = tokenizer.word_to_index[AgentTokenizer.END]
 
         model = AgentLanguageModel(
             vocab_size=checkpoint["vocab_size"],

@@ -112,6 +112,32 @@ def encode_desktop_observation(observation: dict[str, Any]) -> torch.Tensor:
     return torch.tensor(features, dtype=torch.float32)
 
 
+def desktop_step(
+    agent: Agent,
+    desktop_env: DesktopEnv,
+    encoded_observation: torch.Tensor,
+) -> tuple[dict[str, Any], torch.Tensor, dict[str, float]]:
+    """One desktop-mode observe/act/learn cycle.
+
+    Shared by mind.py --desktop and interfaz/web_mind.py so this logic
+    exists in exactly one place instead of being copied between the two
+    entry points.
+    """
+    action = agent.act(encoded_observation)
+    next_observation = desktop_env.get_observation()
+    encoded_next_observation = encode_desktop_observation(next_observation)
+    stats = agent.learn(
+        {
+            "observation": encoded_observation,
+            "action": action,
+            "next_observation": encoded_next_observation,
+            "outcome": next_observation,
+            "was_reset": False,
+        }
+    )
+    return next_observation, encoded_next_observation, stats
+
+
 def apply_action(room: Room, action_index: int) -> dict[str, Any]:
     action = ACTIONS[action_index]
     if action == "touch":
@@ -435,6 +461,7 @@ def main() -> None:
 
     agent = create_agent()
     agent.enable_desktop()
+    agent.enable_voice()
 
     if args.desktop:
         room = None
@@ -530,17 +557,8 @@ def main() -> None:
 
             for _ in range(STEPS_PER_FRAME):
                 if mode == "desktop":
-                    action = agent.act(encoded_observation)
-                    next_observation = desktop_env.get_observation()
-                    encoded_next_observation = encode_desktop_observation(next_observation)
-                    stats = agent.learn(
-                        {
-                            "observation": encoded_observation,
-                            "action": action,
-                            "next_observation": encoded_next_observation,
-                            "outcome": next_observation,
-                            "was_reset": False,
-                        }
+                    next_observation, encoded_next_observation, stats = desktop_step(
+                        agent, desktop_env, encoded_observation
                     )
                 else:
                     action = agent.act(encoded_observation)

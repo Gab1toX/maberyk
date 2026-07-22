@@ -21,6 +21,7 @@ from brain.response import ResponseEngine
 if TYPE_CHECKING:
     from actions.desktop import DesktopEnvironment
     from brain.memory_retrieval import MemoryRetrieval
+    from voice.ollama_voice import OllamaVoice
 
 
 class Agent:
@@ -90,6 +91,13 @@ class Agent:
         self._language_model = None
         self._language_model_tokenizer = None
         self._language_model_unavailable = False
+
+        # Voice is opt-in and desktop-only: Kaggle training loops never call
+        # enable_voice(), so this stays off and _voice is never touched there.
+        self.voice_enabled = False
+        self._voice: "OllamaVoice | None" = None
+        self._voice_unavailable = False
+        self._voice_history: deque[tuple[str, str]] = deque(maxlen=3)
 
     def act(self, observation: torch.Tensor | list[float] | tuple[float, ...]) -> int:
         observation_tensor = self._observation_tensor(observation)
@@ -311,6 +319,10 @@ class Agent:
 
         self.desktop = DesktopEnvironment(permissions=self.permissions)
 
+    def enable_voice(self) -> None:
+        """Opt in to Ollama-backed spoken replies (desktop/mind.py only)."""
+        self.voice_enabled = True
+
     def close(self) -> None:
         self.memory.flush()
         self.memory.close()
@@ -482,16 +494,32 @@ class Agent:
             self.emotional_state.values(),
             memory_context,
         )
-        self.last_response, branch = self._select_response(
-            human_message, retrieved_reply, lm_reply, engine_reply
-        )
+
+        voice_reply = None
+        if self.voice_enabled:
+            voice_reply = self._generate_voice_response(
+                human_message, retrieved_reply, lm_reply
+            )
+
+        if voice_reply:
+            self.last_response, branch = voice_reply, "voice"
+            print(f"[response] branch={branch}")
+        else:
+            self.last_response, branch = self._select_response(
+                human_message, retrieved_reply, lm_reply, engine_reply
+            )
 
         # Store the exchange and reinforce language associations
         if self.last_response:
             # Verbatim human_taught echoes must not pollute the agent-voice
             # training corpus — only language_model/response_engine replies
             # count as the agent's own generated language.
-            source = "retrieved" if branch == "retrieved" else "agent_generated"
+            if branch == "retrieved":
+                source = "retrieved"
+            elif branch == "voice":
+                source = "voice"
+            else:
+                source = "agent_generated"
             self.conversation_memory.store(human_message, self.last_response, source=source)
             self.language.learn(
                 human_message,
@@ -557,6 +585,58 @@ class Agent:
         if not words:
             return None
         return " ".join(words[: self.response_engine.MAX_RESPONSE_WORDS])
+
+    def _get_voice(self) -> "OllamaVoice | None":
+        """Lazily construct the Ollama-backed voice, mirroring
+        _load_language_model: optional, never raises, disables itself for
+        the rest of the session if it cannot even be constructed.
+        """
+        if self._voice_unavailable:
+            return None
+        if self._voice is None:
+            try:
+                from voice.ollama_voice import OllamaVoice
+
+                self._voice = OllamaVoice()
+            except Exception as exc:
+                print(f"[voice] failed to initialize OllamaVoice: {exc}")
+                self._voice_unavailable = True
+                return None
+        return self._voice
+
+    def _generate_voice_response(
+        self,
+        human_message: str,
+        retrieved_reply: str | None,
+        lm_reply: str | None,
+    ) -> str | None:
+        voice = self._get_voice()
+        if voice is None:
+            return None
+
+        recent_thoughts = [
+            entry["phrase"]
+            for entry in list(self.language.expression_history)[-3:]
+            if isinstance(entry, dict) and entry.get("phrase")
+        ]
+        state = {
+            "emotions": self.emotional_state.values(),
+            "recent_thoughts": recent_thoughts,
+            "retrieved_answer": retrieved_reply,
+            "lm_reply": lm_reply,
+            "dominant_emotion": self.emotional_state.dominant(),
+            "history": list(self._voice_history),
+        }
+
+        try:
+            reply = voice.verbalize(human_message, state)
+        except Exception as exc:
+            print(f"[voice] verbalize failed: {exc}")
+            return None
+
+        if reply:
+            self._voice_history.append((human_message, reply))
+        return reply
 
     def _select_response(
         self,
