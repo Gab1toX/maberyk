@@ -23,6 +23,13 @@ if TYPE_CHECKING:
     from brain.memory_retrieval import MemoryRetrieval
     from voice.ollama_voice import OllamaVoice
 
+# Explicit override for free-form teaching: "aprende: <answer>" always stores
+# (previous_user_message, answer) as human_taught, bypassing the heuristic.
+_TEACH_PREFIX = "aprende:"
+# A message starting with one of these (or ending in "?") is treated as a
+# question, not an answer Gabito is volunteering — see _looks_like_question.
+_QUESTION_STARTS = ("que", "quien", "como", "donde", "cuando", "cual", "sabes", "por")
+
 
 class Agent:
     """Autonomous curiosity-driven agent with no external reward."""
@@ -98,6 +105,11 @@ class Agent:
         self._voice: "OllamaVoice | None" = None
         self._voice_unavailable = False
         self._voice_history: deque[tuple[str, str]] = deque(maxlen=3)
+
+        # (previous_user_message, previous_retrieved_reply) — read at the
+        # top of _respond_to_human_message to detect free-form teaching,
+        # then overwritten with the current turn at the end of that call.
+        self._last_exchange: tuple[str, str | None] | None = None
 
     def act(self, observation: torch.Tensor | list[float] | tuple[float, ...]) -> int:
         observation_tensor = self._observation_tensor(observation)
@@ -476,6 +488,10 @@ class Agent:
         if not human_message:
             return
 
+        previous_user_message, previous_retrieved_reply = (
+            self._last_exchange if self._last_exchange is not None else (None, None)
+        )
+
         # Add every word from the human message to the agent vocabulary
         for word in human_message.lower().split():
             clean = re.sub(r'[^\w]', '', word)
@@ -495,10 +511,15 @@ class Agent:
             memory_context,
         )
 
+        just_learned = self._maybe_learn_from_teaching(
+            previous_user_message, previous_retrieved_reply, human_message
+        )
+        self._last_exchange = (human_message, retrieved_reply)
+
         voice_reply = None
         if self.voice_enabled:
             voice_reply = self._generate_voice_response(
-                human_message, retrieved_reply, lm_reply
+                human_message, retrieved_reply, lm_reply, just_learned
             )
 
         if voice_reply:
@@ -609,6 +630,7 @@ class Agent:
         human_message: str,
         retrieved_reply: str | None,
         lm_reply: str | None,
+        just_learned: bool = False,
     ) -> str | None:
         voice = self._get_voice()
         if voice is None:
@@ -626,6 +648,7 @@ class Agent:
             "lm_reply": lm_reply,
             "dominant_emotion": self.emotional_state.dominant(),
             "history": list(self._voice_history),
+            "just_learned": just_learned,
         }
 
         try:
@@ -637,6 +660,48 @@ class Agent:
         if reply:
             self._voice_history.append((human_message, reply))
         return reply
+
+    def _maybe_learn_from_teaching(
+        self,
+        previous_user_message: str | None,
+        previous_retrieved_reply: str | None,
+        current_message: str,
+    ) -> bool:
+        """Turns free-form teaching in normal chat into human_taught data.
+
+        Today only QuestionEngine answers (via receive_answer) become
+        human_taught and thus retrievable. This lets a plain follow-up
+        statement — or an explicit "aprende: ..." override — do the same,
+        so knowledge Gabito volunteers unprompted isn't lost to a
+        non-retrievable source like "voice"/"agent_generated".
+        """
+        stripped = current_message.strip()
+        lowered = stripped.lower()
+
+        if lowered.startswith(_TEACH_PREFIX):
+            taught_answer = stripped[len(_TEACH_PREFIX):].strip()
+            if previous_user_message and taught_answer:
+                self._store_taught_answer(previous_user_message, taught_answer)
+                return True
+            return False
+
+        if not previous_user_message or previous_retrieved_reply is not None:
+            return False
+
+        if self._looks_like_question(lowered):
+            return False
+
+        self._store_taught_answer(previous_user_message, current_message)
+        return True
+
+    def _looks_like_question(self, lowered_message: str) -> bool:
+        if lowered_message.endswith("?"):
+            return True
+        return lowered_message.startswith(_QUESTION_STARTS)
+
+    def _store_taught_answer(self, question: str, answer: str) -> None:
+        self.conversation_memory.store(question, answer, source="human_taught")
+        print(f"[teach] learned: {question}")
 
     def _select_response(
         self,

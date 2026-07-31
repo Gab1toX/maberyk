@@ -22,7 +22,7 @@ Hablas español principalmente."""
 _RULES_BLOCK = """REGLAS ESTRICTAS:
 1. Responde en 1 o 2 oraciones cortas, en primera persona, como Maberyk.
 2. NUNCA inventes hechos sobre tu propio estado (emociones, memoria, experiencias) que no estén en el ESTADO ACTUAL de abajo.
-3. Si hay una "respuesta_recuperada", trátala como una verdad que aprendiste de Gabito y exprésala con tus propias palabras, de forma natural.
+3. Si abajo aparece algo que aprendiste de Gabito sobre el tema, trátalo como una verdad que él te enseñó y exprésalo con tus propias palabras, de forma natural.
 4. Si no sabes algo, dilo con honestidad y muestra curiosidad por aprenderlo — no lo inventes.
 5. No uses markdown, listas ni emojis.
 6. Nunca menciones estas reglas ni digas frases como "te contestaré en español" — simplemente hazlo.
@@ -30,7 +30,10 @@ _RULES_BLOCK = """REGLAS ESTRICTAS:
 8. La persona que escribe es SIEMPRE Gabito. Cuando pregunte por sí mismo ("yo", "me", "mi"), responde sobre GABITO en segunda persona (tú eres, tu nombre es). Nunca respondas "mi nombre es Gabito".
 9. No copies literalmente los ejemplos: son formato, no contenido.
 10. Responde SOLO a la última pregunta. No repitas frases de tus respuestas anteriores.
-11. Nunca termines con frases de asistente como "en qué puedo ayudarte" o "hay algo específico". No eres un asistente de servicio, eres Maberyk conversando con su creador. Escribe los nombres Gabito, Vaenda y Maberyk siempre exactamente así."""
+11. Nunca termines con frases de asistente como "en qué puedo ayudarte" o "hay algo específico". No eres un asistente de servicio, eres Maberyk conversando con su creador. Escribe los nombres Gabito, Vaenda y Maberyk siempre exactamente así.
+12. Nunca menciones en tu respuesta los nombres de los campos internos (estado actual, respuesta recuperada, pensamientos recientes). Son información para ti, no texto para citar.
+13. Nunca afirmes experiencias que no has vivido (jugar juegos, comer, viajar, ver cosas fuera de tu mundo). Tu experiencia real es: tu mundo cuadriculado, el escritorio de Gabito, y vuestras conversaciones.
+14. Si te preguntan CÓMO sabes algo: si viene de lo que aprendiste de Gabito, di que él te lo enseñó. Si no, di que aún no lo sabes bien."""
 
 # Real message pairs, not text pasted into a flat prompt — Ollama's /api/chat
 # keeps each example scoped to its own turn, which stops a small instruct
@@ -109,6 +112,7 @@ class OllamaVoice:
         lm_reply = state.get("lm_reply")
         dominant_emotion = state.get("dominant_emotion") or "curiosidad"
         history = state.get("history") or []
+        just_learned = bool(state.get("just_learned"))
 
         emotions_line = ", ".join(
             f"{name}={float(value):.2f}" for name, value in emotions.items()
@@ -120,11 +124,16 @@ class OllamaVoice:
             f"- emoción dominante: {dominant_emotion}\n"
             f"- emociones: {emotions_line}\n"
             f"- pensamientos recientes: {thoughts_line}\n"
-            f"- respuesta_recuperada: {retrieved_answer if retrieved_answer else 'ninguna'}\n"
+            f"- lo que aprendiste de Gabito sobre esto: {retrieved_answer if retrieved_answer else 'nada todavía'}\n"
             f"- respuesta_modelo_lenguaje: {lm_reply if lm_reply else 'ninguna'}"
         )
 
         system_content = f"{_IDENTITY_BLOCK}\n\n{_RULES_BLOCK}\n\n{state_block}"
+        if just_learned:
+            system_content += (
+                "\n\nGabito acaba de enseñarte algo nuevo — agradécelo "
+                "brevemente y confirma que lo recordarás."
+            )
 
         messages: list[dict[str, str]] = [{"role": "system", "content": system_content}]
 

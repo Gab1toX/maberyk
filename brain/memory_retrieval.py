@@ -11,6 +11,8 @@ if TYPE_CHECKING:
 KEYWORD_STOPWORDS = {
     "quien", "quienes", "sobre", "porque", "puedes", "puede", "tienes",
     "tiene", "donde", "cuando", "como", "cual", "cuales", "eres", "estas",
+    "sabes", "sabe", "conoces", "conoce", "dime", "cuentame", "explicame",
+    "recuerdas", "podrias",
     "that", "what", "this", "with", "have", "does",
 }
 
