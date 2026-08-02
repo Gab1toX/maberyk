@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Iterable, TYPE_CHECKING
 
 import re
+import string
 import torch
 from torch import nn
 
@@ -26,9 +27,22 @@ if TYPE_CHECKING:
 # Explicit override for free-form teaching: "aprende: <answer>" always stores
 # (previous_user_message, answer) as human_taught, bypassing the heuristic.
 _TEACH_PREFIX = "aprende:"
-# A message starting with one of these (or ending in "?") is treated as a
-# question, not an answer Gabito is volunteering — see _looks_like_question.
-_QUESTION_STARTS = ("que", "quien", "como", "donde", "cuando", "cual", "sabes", "por")
+# Full words (not prefixes) whose presence as the FIRST token marks a message
+# as a question, not an answer Gabito is volunteering — see
+# _looks_like_question. Prefix matching previously misfired on words like
+# "porque"/"pon" that merely started with a question stem such as "por".
+_QUESTION_STARTS = frozenset((
+    "que", "qué", "quien", "quién", "quienes", "quiénes", "como", "cómo",
+    "donde", "dónde", "cuando", "cuándo", "cual", "cuál", "cuales", "cuáles",
+    "cuanto", "cuánto", "cuanta", "cuánta", "cuantos", "cuántos", "por",
+    "para", "sabes", "sabias", "sabías", "conoces", "recuerdas", "dime",
+    "cuentame", "cuéntame", "explicame", "explícame", "puedes", "podrias",
+    "podrías", "tienes", "hay", "existe", "what", "who", "how", "where",
+    "when", "why",
+))
+# Phrases that undo the most recent free-form teaching entry — see the undo
+# branch at the top of _respond_to_human_message.
+_UNDO_PHRASES = frozenset(("olvida eso", "olvidalo", "olvídalo", "eso no"))
 
 
 class Agent:
@@ -110,6 +124,11 @@ class Agent:
         # top of _respond_to_human_message to detect free-form teaching,
         # then overwritten with the current turn at the end of that call.
         self._last_exchange: tuple[str, str | None] | None = None
+
+        # (question, answer, source) of the most recent teach-store, so a
+        # follow-up "olvida eso" can undo exactly that row — see
+        # _respond_to_human_message's undo branch and _store_taught_answer.
+        self._last_taught: tuple[str, str, str] | None = None
 
     def act(self, observation: torch.Tensor | list[float] | tuple[float, ...]) -> int:
         observation_tensor = self._observation_tensor(observation)
@@ -488,6 +507,14 @@ class Agent:
         if not human_message:
             return
 
+        if human_message.strip().lower() in _UNDO_PHRASES and self._last_taught is not None:
+            question, answer, source = self._last_taught
+            self.conversation_memory.delete_exact(question, answer, source)
+            self._last_taught = None
+            print(f"[teach] undone: {question}")
+            self.last_response = "Listo, lo olvidé."
+            return
+
         previous_user_message, previous_retrieved_reply = (
             self._last_exchange if self._last_exchange is not None else (None, None)
         )
@@ -678,30 +705,49 @@ class Agent:
         stripped = current_message.strip()
         lowered = stripped.lower()
 
+        # Explicit path: bypasses every heuristic gate below.
         if lowered.startswith(_TEACH_PREFIX):
             taught_answer = stripped[len(_TEACH_PREFIX):].strip()
             if previous_user_message and taught_answer:
-                self._store_taught_answer(previous_user_message, taught_answer)
+                self._store_taught_answer(previous_user_message, taught_answer, source="human_taught")
                 return True
             return False
 
-        if not previous_user_message or previous_retrieved_reply is not None:
+        # Heuristic path: only fires when the previous turn read as Gabito
+        # asking a question and this turn reads as a real, substantive answer
+        # (not another question, not an echo of the question itself).
+        if previous_user_message is None:
             return False
-
+        if previous_retrieved_reply is not None:
+            return False
+        if not self._looks_like_question(previous_user_message.lower()):
+            return False
         if self._looks_like_question(lowered):
             return False
+        if len(stripped.split()) < 4:
+            return False
+        if lowered == previous_user_message.strip().lower():
+            return False
 
-        self._store_taught_answer(previous_user_message, current_message)
+        self._store_taught_answer(previous_user_message, current_message, source="taught_inferred")
         return True
 
     def _looks_like_question(self, lowered_message: str) -> bool:
-        if lowered_message.endswith("?"):
+        stripped = lowered_message.strip().strip('¿¡"\'').strip()
+        if stripped.endswith("?"):
             return True
-        return lowered_message.startswith(_QUESTION_STARTS)
 
-    def _store_taught_answer(self, question: str, answer: str) -> None:
-        self.conversation_memory.store(question, answer, source="human_taught")
-        print(f"[teach] learned: {question}")
+        tokens = stripped.split()
+        if not tokens:
+            return False
+
+        first_token = tokens[0].rstrip(string.punctuation)
+        return first_token in _QUESTION_STARTS
+
+    def _store_taught_answer(self, question: str, answer: str, source: str) -> None:
+        self.conversation_memory.store(question, answer, source=source)
+        self._last_taught = (question, answer, source)
+        print(f"[teach] {source}: {question} -> {answer}")
 
     def _select_response(
         self,

@@ -72,6 +72,23 @@ class ConversationMemory:
         self.connection.commit()
         return int(cursor.lastrowid)
 
+    def delete_exact(self, question: str, answer: str, source: str) -> int:
+        """Deletes the most recent row matching (question, answer, source)
+        exactly — used to undo a single free-form teach-store on request."""
+        cursor = self.connection.execute(
+            """
+            DELETE FROM conversations
+            WHERE id = (
+                SELECT id FROM conversations
+                WHERE question = ? AND answer = ? AND source = ?
+                ORDER BY timestamp DESC LIMIT 1
+            )
+            """,
+            (question, answer, source),
+        )
+        self.connection.commit()
+        return cursor.rowcount
+
     def recall(self, question: str, limit: int = 3) -> list[dict]:
         keywords = self._extract_keywords(question)
         if not keywords:
