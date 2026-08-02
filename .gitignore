@@ -3,6 +3,9 @@ agent_state.pt
 agent_state_migrated.pt
 episodic_memory.sqlite3
 
+# Backups generados por scripts/backup.py
+backups/
+
 # Credenciales — NUNCA al repo
 google_credentials.json
 *.json
