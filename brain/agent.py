@@ -22,6 +22,7 @@ from brain.response import ResponseEngine
 if TYPE_CHECKING:
     from actions.desktop import DesktopEnvironment
     from brain.memory_retrieval import MemoryRetrieval
+    from tutor.llm_tutor import LLMTutor
     from voice.ollama_voice import OllamaVoice
 
 # Explicit override for free-form teaching: "aprende: <answer>" always stores
@@ -119,6 +120,15 @@ class Agent:
         self._voice: "OllamaVoice | None" = None
         self._voice_unavailable = False
         self._voice_history: deque[tuple[str, str]] = deque(maxlen=3)
+
+        # Tutor is opt-in and desktop-only, same as voice: Kaggle training
+        # loops never call enable_tutor(), so this stays off and _tutor is
+        # never touched there.
+        self.tutor_enabled = False
+        self._tutor: "LLMTutor | None" = None
+        self._tutor_unavailable = False
+        self.pending_correction: dict[str, Any] | None = None
+        self._tutor_corrections = 0
 
         # (previous_user_message, previous_retrieved_reply) — read at the
         # top of _respond_to_human_message to detect free-form teaching,
@@ -354,6 +364,60 @@ class Agent:
         """Opt in to Ollama-backed spoken replies (desktop/mind.py only)."""
         self.voice_enabled = True
 
+    def enable_tutor(self) -> None:
+        """Opt in to Groq-backed corrections of the agent's own raw language
+        model output (desktop/mind.py only). Unlike voice, LLMTutor is built
+        right here rather than lazily on first use, so its common_words
+        snapshot is taken from the vocabulary at enable time; the
+        never-raises/"unavailable" safety net still mirrors _get_voice.
+        """
+        if self._tutor is not None:
+            self.tutor_enabled = True
+            return
+        if self._tutor_unavailable:
+            return
+
+        from tutor.llm_tutor import LLMTutor
+
+        common_words = self._most_frequent_vocabulary(80)
+        try:
+            self._tutor = LLMTutor(common_words=common_words)
+        except Exception as exc:
+            print(f"[tutor] failed to initialize LLMTutor: {exc}")
+            self._tutor_unavailable = True
+            return
+
+        self.tutor_enabled = True
+
+    def approve_correction(self) -> bool:
+        """Human approves the pending tutor correction: it enters the corpus
+        as tutor_approved and its new words join the agent's vocabulary.
+        """
+        if self.pending_correction is None:
+            return False
+
+        question = self.pending_correction["question"]
+        corrected = self.pending_correction["corrected"]
+        new_words = self.pending_correction["new_words"]
+
+        self.conversation_memory.store(question, corrected, source="tutor_approved")
+        for word in new_words:
+            self.language.add_word(word)
+
+        print(f"[tutor] approved: {question} -> {corrected}")
+        self.pending_correction = None
+        return True
+
+    def reject_correction(self) -> bool:
+        """Human discards the pending tutor correction: nothing is stored."""
+        if self.pending_correction is None:
+            return False
+
+        question = self.pending_correction["question"]
+        print(f"[tutor] discarded: {question}")
+        self.pending_correction = None
+        return True
+
     def close(self) -> None:
         self.memory.flush()
         self.memory.close()
@@ -464,6 +528,23 @@ class Agent:
         if was_reset:
             self.danger_action_scores[action] = min(1.0, self.danger_action_scores[action] + 0.5)
 
+    def _most_frequent_vocabulary(self, limit: int) -> list[str]:
+        """Approximate word frequency for the tutor's common_words hint.
+
+        LanguageEngine tracks no explicit per-word usage counter, so this
+        ranks by cumulative association-weight magnitude -- the closest
+        signal to "how often this word has been reinforced through use"
+        that already exists in the model.
+        """
+        ranked = sorted(
+            self.language.vocabulary,
+            key=lambda word: sum(
+                abs(weight) for weight in self.language.associations.get(word, {}).values()
+            ),
+            reverse=True,
+        )
+        return ranked[:limit]
+
     def _is_familiar(self, observation: Any) -> bool:
         similar = self.memory.recall_similar(self._plain_value(observation), limit=1)
         return bool(similar and similar[0].get("similarity", 0.0) >= 0.85)
@@ -543,32 +624,49 @@ class Agent:
         )
         self._last_exchange = (human_message, retrieved_reply)
 
-        voice_reply = None
-        if self.voice_enabled:
-            voice_reply = self._generate_voice_response(
-                human_message, retrieved_reply, lm_reply, just_learned
-            )
+        tutor_result = None
+        if self.tutor_enabled and lm_reply:
+            if self.pending_correction is not None:
+                print("[tutor] skipped: correction still pending approval")
+            else:
+                tutor_result = self._generate_tutor_response(lm_reply, human_message)
 
-        if voice_reply:
-            self.last_response, branch = voice_reply, "voice"
+        if tutor_result is not None:
+            self.last_response, branch = tutor_result
             print(f"[response] branch={branch}")
         else:
-            self.last_response, branch = self._select_response(
-                human_message, retrieved_reply, lm_reply, engine_reply
-            )
+            voice_reply = None
+            if self.voice_enabled:
+                voice_reply = self._generate_voice_response(
+                    human_message, retrieved_reply, lm_reply, just_learned
+                )
+
+            if voice_reply:
+                self.last_response, branch = voice_reply, "voice"
+                print(f"[response] branch={branch}")
+            else:
+                self.last_response, branch = self._select_response(
+                    human_message, retrieved_reply, lm_reply, engine_reply
+                )
 
         # Store the exchange and reinforce language associations
         if self.last_response:
             # Verbatim human_taught echoes must not pollute the agent-voice
             # training corpus — only language_model/response_engine replies
-            # count as the agent's own generated language.
+            # count as the agent's own generated language. Tutor branches
+            # are excluded too: a correction only enters the corpus after
+            # explicit human approval (approve_correction), and a rejection
+            # is never stored.
             if branch == "retrieved":
                 source = "retrieved"
             elif branch == "voice":
                 source = "voice"
+            elif branch in ("tutor", "tutor_rejected"):
+                source = None
             else:
                 source = "agent_generated"
-            self.conversation_memory.store(human_message, self.last_response, source=source)
+            if source is not None:
+                self.conversation_memory.store(human_message, self.last_response, source=source)
             self.language.learn(
                 human_message,
                 self.emotional_state,
@@ -633,6 +731,41 @@ class Agent:
         if not words:
             return None
         return " ".join(words[: self.response_engine.MAX_RESPONSE_WORDS])
+
+    def _generate_tutor_response(
+        self, lm_reply: str, human_message: str
+    ) -> tuple[str, str] | None:
+        """Ask the tutor to rewrite the agent's own raw language-model reply.
+
+        Returns None both when the tutor isn't actually available and on any
+        API failure -- either way the caller falls through to
+        voice/retrieved/language_model/response_engine exactly as if the
+        tutor branch had never run.
+        """
+        if self._tutor is None:
+            return None
+
+        self._tutor_corrections += 1
+        if self._tutor_corrections % 20 == 0:
+            self._tutor.common_words = self._most_frequent_vocabulary(80)
+
+        result = self._tutor.correct(lm_reply, set(self.language.vocabulary))
+        if result is None:
+            return None
+
+        print(f"[tutor] raw: {lm_reply}")
+
+        if result["status"] == "rejected":
+            return lm_reply, "tutor_rejected"
+
+        corrected = result["corrected"]
+        self.pending_correction = {
+            "question": human_message,
+            "raw": lm_reply,
+            "corrected": corrected,
+            "new_words": result["new_words"],
+        }
+        return corrected, "tutor"
 
     def _get_voice(self) -> "OllamaVoice | None":
         """Lazily construct the Ollama-backed voice, mirroring
