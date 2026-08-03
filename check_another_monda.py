@@ -1,5 +1,10 @@
-import sqlite3
-conn = sqlite3.connect("episodic_memory.sqlite3")
-rows = conn.execute("SELECT question, answer, source FROM conversations WHERE answer LIKE '%valorant%' ORDER BY timestamp DESC LIMIT 5").fetchall()
-for q, a, s in rows:
-    print(s, "|", q, "->", a)
+python - << 'EOF'
+import io
+p = 'interfaz/web_mind.py'
+s = io.open(p, encoding='utf-8').read()
+old = "        self.agent.enable_voice()\n"
+new = "        self.agent.enable_voice()\n        self.agent.enable_tutor()\n"
+assert s.count(old) == 1, f"encontradas {s.count(old)} coincidencias"
+io.open(p, 'w', encoding='utf-8').write(s.replace(old, new))
+print("listo")
+EOF

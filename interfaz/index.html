@@ -189,6 +189,79 @@
     text-transform: uppercase;
   }
 
+  #correction-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px 20px;
+    background: var(--panel);
+    border-top: 1px solid var(--panel-border);
+    flex-shrink: 0;
+  }
+  #correction-panel.hidden { display: none; }
+
+  .correction-label {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+
+  #correction-raw {
+    font-family: "Cascadia Code", Consolas, monospace;
+    font-size: 13px;
+    color: var(--muted);
+    background: #101317;
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+
+  #correction-corrected {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    background: #1a2f22;
+    border: 1px solid var(--confidence);
+    border-radius: 8px;
+    padding: 8px 10px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+
+  #correction-new-words {
+    color: var(--curiosity);
+    font-weight: 600;
+  }
+
+  .correction-actions {
+    display: flex;
+    gap: 10px;
+  }
+
+  .correction-actions button {
+    border: none;
+    border-radius: 8px;
+    padding: 8px 18px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  #correction-approve {
+    background: var(--confidence);
+    color: #0c1c12;
+    font-weight: 600;
+  }
+
+  #correction-reject {
+    background: none;
+    border: 1px solid var(--panel-border);
+    color: var(--muted);
+  }
+  #correction-reject:hover { color: var(--text); border-color: var(--fear); }
+
   #input-bar {
     display: flex;
     gap: 10px;
@@ -301,6 +374,19 @@
 <div class="body-layout">
   <main>
     <div id="chat"></div>
+    <div id="correction-panel" class="hidden">
+      <div class="correction-label">cruda</div>
+      <div id="correction-raw"></div>
+      <div class="correction-label">corregida</div>
+      <div id="correction-corrected"></div>
+      <div id="correction-new-words-wrap" class="correction-label">
+        palabras nuevas: <span id="correction-new-words"></span>
+      </div>
+      <div class="correction-actions">
+        <button id="correction-approve">Aprobar</button>
+        <button id="correction-reject">Descartar</button>
+      </div>
+    </div>
     <div id="input-bar">
       <input id="text-input" type="text" placeholder="Escribele a Maberyk..." autocomplete="off">
       <button id="send-button">Enviar</button>
@@ -319,9 +405,17 @@
   const sendButton = document.getElementById("send-button");
   const sidePanel = document.getElementById("side-panel");
   const togglePanelButton = document.getElementById("toggle-panel");
+  const correctionPanel = document.getElementById("correction-panel");
+  const correctionRaw = document.getElementById("correction-raw");
+  const correctionCorrected = document.getElementById("correction-corrected");
+  const correctionNewWordsWrap = document.getElementById("correction-new-words-wrap");
+  const correctionNewWords = document.getElementById("correction-new-words");
+  const correctionApproveButton = document.getElementById("correction-approve");
+  const correctionRejectButton = document.getElementById("correction-reject");
 
   let lastRenderedQuestion = null;
   let sending = false;
+  let correctionPending = false;
 
   togglePanelButton.addEventListener("click", () => {
     const collapsed = sidePanel.classList.toggle("collapsed");
@@ -359,7 +453,7 @@
 
   async function sendMessage() {
     const text = textInput.value.trim();
-    if (!text || sending) return;
+    if (!text || sending || correctionPending) return;
 
     sending = true;
     sendButton.disabled = true;
@@ -387,7 +481,7 @@
       addBubble("agent", "No pude conectar con Maberyk.", {});
     } finally {
       sending = false;
-      sendButton.disabled = false;
+      sendButton.disabled = correctionPending;
       textInput.focus();
     }
   }
@@ -423,6 +517,43 @@
     addBubble("agent", question, { question: true });
   }
 
+  function updateCorrection(correction) {
+    correctionPending = !!correction;
+    correctionPanel.classList.toggle("hidden", !correctionPending);
+
+    if (correctionPending) {
+      correctionRaw.textContent = correction.raw;
+      correctionCorrected.textContent = correction.corrected;
+      const newWords = correction.new_words || [];
+      correctionNewWordsWrap.style.display = newWords.length ? "" : "none";
+      correctionNewWords.textContent = newWords.join(", ");
+    }
+
+    textInput.disabled = correctionPending;
+    sendButton.disabled = correctionPending || sending;
+  }
+
+  async function resolveCorrection(action) {
+    correctionApproveButton.disabled = true;
+    correctionRejectButton.disabled = true;
+    try {
+      await fetch("/correction", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: action }),
+      });
+    } catch (err) {
+      // Server not reachable this tick — next poll will retry.
+    } finally {
+      correctionApproveButton.disabled = false;
+      correctionRejectButton.disabled = false;
+      refreshState();
+    }
+  }
+
+  correctionApproveButton.addEventListener("click", () => resolveCorrection("approve"));
+  correctionRejectButton.addEventListener("click", () => resolveCorrection("reject"));
+
   async function refreshState() {
     try {
       const res = await fetch("/state");
@@ -440,6 +571,7 @@
 
       updateInnerVoice(data.inner_voice || []);
       updatePendingQuestion(data.pending_question);
+      updateCorrection(data.correction);
     } catch (err) {
       // Server not reachable this tick — next poll will retry.
     }

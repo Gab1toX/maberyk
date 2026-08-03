@@ -38,12 +38,13 @@ _INSTRUCTION_TEMPLATE = """La entrada es una frase cruda producida por un modelo
 Reglas estrictas:
 1. Conserva la intencion y el contenido original de la frase. NO respondas una pregunta, NO agregues informacion nueva, NO cambies de tema. Solo reestructura lo que ya esta ahi.
 2. Preferi palabras de esta lista de vocabulario siempre que sea posible: {vocabulary_list}
-3. Podes introducir como maximo 2 palabras que no esten en esa lista.
+3. Podes introducir como maximo {max_new_words} palabras que no esten en esa lista.
 4. Maximo 20 palabras. Primera persona. Sin markdown, sin comillas, sin preambulo.
 5. Rechaza si tienes que APORTAR TU el verbo principal o el sujeto principal. La frase cruda debe traer ya un verbo. Si solo hay sustantivos, adjetivos y conectores sueltos, responde {rejection_token}.
    Rechaza tambien si hay palabras repetidas sin sentido o fragmentos contradictorios.
    NO rechaces solo porque falten articulos, preposiciones, tildes o concordancia -- eso es exactamente lo que debes arreglar.
 6. No introduzcas verbos ni ideas que no esten en la frase cruda. Si puedes conjugar, acentuar o reordenar los verbos que ya estan, hazlo libremente: eso es corregir, no inventar.
+7. IMPORTANTE: ante la duda, CORRIGE. Solo responde {rejection_token} cuando la frase sea claramente irrecuperable. Un humano revisara tu correccion despues, asi que un rechazo innecesario destruye trabajo util. Si la frase tiene un verbo conjugado y se entiende, corrigela aunque le falten tildes, comas o preposiciones.
 
 Ejemplos:
 Entrada: mente nacio saber nada y aprende
@@ -53,7 +54,10 @@ Entrada: portal el y y stone cyan
 Salida: RECHAZO
 
 Entrada: yo siento curiosidad mundo grande
-Salida: Siento curiosidad por el mundo grande"""
+Salida: Siento curiosidad por el mundo grande
+
+Entrada: gabito un colombiano de dieciocho años me construyo neurona por neurona
+Salida: Gabito, un colombiano de dieciocho años, me construyo neurona por neurona"""
 
 
 def _strip_punctuation(word: str) -> str:
@@ -76,6 +80,7 @@ class LLMTutor:
         timeout: int = 30,
         common_words: list[str] | None = None,
         debug: bool = False,
+        max_new_words: int = 4,
     ) -> None:
         resolved_key = api_key if api_key is not None else os.environ.get("GROQ_API_KEY")
         if not resolved_key:
@@ -87,6 +92,7 @@ class LLMTutor:
         self.timeout = timeout
         self.common_words = list(common_words)[:80] if common_words else []
         self.debug = debug
+        self.max_new_words = max_new_words
 
     def correct(self, raw_reply: str, vocabulary: set[str]) -> dict | None:
         """Rewrite raw_reply into fluent Spanish, biased toward vocabulary.
@@ -121,6 +127,7 @@ class LLMTutor:
         system_instruction = _INSTRUCTION_TEMPLATE.format(
             vocabulary_list=", ".join(prompt_words) or "(vacia)",
             rejection_token=_REJECTION_TOKEN,
+            max_new_words=self.max_new_words,
         )
 
         payload = json.dumps(
@@ -130,7 +137,7 @@ class LLMTutor:
                     {"role": "system", "content": system_instruction},
                     {"role": "user", "content": raw_reply},
                 ],
-                "temperature": 0.3,
+                "temperature": 0.1,
                 "max_tokens": 100,
             }
         ).encode("utf-8")
@@ -203,7 +210,7 @@ class LLMTutor:
             seen.add(normalized)
             new_words.append(stripped)
 
-        if len(new_words) > 2:
+        if len(new_words) > self.max_new_words:
             if self.debug:
                 print(f"[tutor:rejected] too-many-new-words: {new_words}")
             return {"status": "rejected", "corrected": None, "new_words": []}

@@ -46,6 +46,7 @@ class AgentSession:
         self.agent = create_agent()
         self.agent.enable_desktop()
         self.agent.enable_voice()
+        self.agent.enable_tutor()
 
         self.desktop_env = DesktopEnv()
         observation = self.desktop_env.get_observation()
@@ -111,13 +112,30 @@ class AgentSession:
 
     def state_snapshot(self) -> dict:
         with self.lock:
+            pending = self.agent.pending_correction
+            correction = None
+            if pending is not None:
+                correction = {
+                    "raw": pending["raw"],
+                    "corrected": pending["corrected"],
+                    "new_words": pending["new_words"],
+                }
             return {
                 "steps": self.step,
                 "emotions": self.agent.emotional_state.values(),
                 "dominant_emotion": self.agent.emotional_state.dominant(),
                 "inner_voice": list(self.inner_voice_log[-INNER_VOICE_MAXLEN:]),
                 "pending_question": self.agent.get_question() or None,
+                "correction": correction,
             }
+
+    def resolve_correction(self, action: str) -> bool:
+        with self.lock:
+            if action == "approve":
+                return self.agent.approve_correction()
+            if action == "reject":
+                return self.agent.reject_correction()
+            raise ValueError(f"unknown action: {action}")
 
     def background_loop(self) -> None:
         while self.running:
@@ -162,25 +180,43 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         else:
             self._send_json(404, {"error": "not found"})
 
-    def do_POST(self) -> None:
-        if self.path != "/message":
-            self._send_json(404, {"error": "not found"})
-            return
-
+    def _read_json_body(self) -> dict | None:
+        """Read and parse the request body as JSON. On malformed JSON, sends
+        the 400 response itself and returns None -- callers just bail out.
+        """
         length = int(self.headers.get("Content-Length", 0) or 0)
         raw = self.rfile.read(length) if length else b""
         try:
-            data = json.loads(raw.decode("utf-8")) if raw else {}
+            return json.loads(raw.decode("utf-8")) if raw else {}
         except json.JSONDecodeError:
             self._send_json(400, {"error": "invalid json"})
-            return
+            return None
 
-        text = str(data.get("text", "")).strip()
-        if not text:
-            self._send_json(400, {"error": "empty text"})
-            return
+    def do_POST(self) -> None:
+        if self.path == "/message":
+            data = self._read_json_body()
+            if data is None:
+                return
 
-        self._send_json(200, self.session.send_message(text))
+            text = str(data.get("text", "")).strip()
+            if not text:
+                self._send_json(400, {"error": "empty text"})
+                return
+
+            self._send_json(200, self.session.send_message(text))
+        elif self.path == "/correction":
+            data = self._read_json_body()
+            if data is None:
+                return
+
+            action = str(data.get("action", ""))
+            if action not in ("approve", "reject"):
+                self._send_json(400, {"error": "invalid action"})
+                return
+
+            self._send_json(200, {"ok": self.session.resolve_correction(action)})
+        else:
+            self._send_json(404, {"error": "not found"})
 
 
 def main() -> None:

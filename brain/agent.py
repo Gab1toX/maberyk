@@ -381,7 +381,7 @@ class Agent:
 
         common_words = self._most_frequent_vocabulary(80)
         try:
-            self._tutor = LLMTutor(common_words=common_words)
+            self._tutor = LLMTutor(common_words=common_words, debug=True)
         except Exception as exc:
             print(f"[tutor] failed to initialize LLMTutor: {exc}")
             self._tutor_unavailable = True
@@ -730,7 +730,7 @@ class Agent:
         words = [word for word in generated if word not in (tokenizer.PAD, tokenizer.UNK)]
         if not words:
             return None
-        return " ".join(words[: self.response_engine.MAX_RESPONSE_WORDS])
+        return " ".join(words)
 
     def _generate_tutor_response(
         self, lm_reply: str, human_message: str
