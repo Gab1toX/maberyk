@@ -607,17 +607,8 @@ class Agent:
                 self.language.add_word(clean)
         self.response_engine.update_vocabulary(self.language.vocabulary)
 
-        # Retrieve conversation context to inform the response
-        memory_context = self.conversation_memory.recall(human_message, limit=2)
-
         retrieved_reply = self.memory_retrieval.retrieve(human_message)
         lm_reply = self._generate_language_model_response(human_message)
-        # Generate response using enriched vocabulary and emotional state
-        engine_reply = self.response_engine.generate(
-            human_message,
-            self.emotional_state.values(),
-            memory_context,
-        )
 
         just_learned = self._maybe_learn_from_teaching(
             previous_user_message, previous_retrieved_reply, human_message
@@ -646,22 +637,23 @@ class Agent:
                 print(f"[response] branch={branch}")
             else:
                 self.last_response, branch = self._select_response(
-                    human_message, retrieved_reply, lm_reply, engine_reply
+                    human_message, retrieved_reply, lm_reply
                 )
 
         # Store the exchange and reinforce language associations
         if self.last_response:
             # Verbatim human_taught echoes must not pollute the agent-voice
-            # training corpus — only language_model/response_engine replies
-            # count as the agent's own generated language. Tutor branches
-            # are excluded too: a correction only enters the corpus after
-            # explicit human approval (approve_correction), and a rejection
-            # is never stored.
+            # training corpus — only language_model replies count as the
+            # agent's own generated language. Tutor branches are excluded
+            # too: a correction only enters the corpus after explicit human
+            # approval (approve_correction), and a rejection is never
+            # stored. A silent branch (no retrieved/lm reply available)
+            # produces an empty last_response and is never stored either.
             if branch == "retrieved":
                 source = "retrieved"
             elif branch == "voice":
                 source = "voice"
-            elif branch in ("tutor", "tutor_rejected"):
+            elif branch in ("tutor", "tutor_rejected", "silent"):
                 source = None
             else:
                 source = "agent_generated"
@@ -887,7 +879,6 @@ class Agent:
         human_message: str,
         retrieved_reply: str | None,
         lm_reply: str | None,
-        engine_reply: str,
     ) -> tuple[str, str]:
         if retrieved_reply:
             branch = "retrieved"
@@ -896,8 +887,10 @@ class Agent:
             branch = "language_model"
             reply = lm_reply
         else:
-            branch = "response_engine"
-            reply = engine_reply
+            # An empty response is honest; ResponseEngine's SVO output is
+            # noise that would otherwise enter the corpus as agent_generated.
+            branch = "silent"
+            reply = ""
         print(f"[response] branch={branch}")
         return reply, branch
 
