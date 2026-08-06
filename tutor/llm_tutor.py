@@ -40,28 +40,25 @@ Reglas estrictas:
 2. Preferi palabras de esta lista de vocabulario siempre que sea posible: {vocabulary_list}
 3. Podes introducir como maximo {max_new_words} palabras que no esten en esa lista.
 4. Maximo 20 palabras. Primera persona. Sin markdown, sin comillas, sin preambulo.
-5. Rechaza si tienes que APORTAR TU el verbo principal o el sujeto principal. La frase cruda debe traer ya un verbo. Si solo hay sustantivos, adjetivos y conectores sueltos, responde {rejection_token}.
-   Rechaza tambien si hay palabras repetidas sin sentido o fragmentos contradictorios.
-   NO rechaces solo porque falten articulos, preposiciones, tildes o concordancia -- eso es exactamente lo que debes arreglar.
-6. No introduzcas verbos ni ideas que no esten en la frase cruda. Si puedes conjugar, acentuar o reordenar los verbos que ya estan, hazlo libremente: eso es corregir, no inventar.
-7. IMPORTANTE: ante la duda, CORRIGE. Solo responde {rejection_token} cuando la frase sea claramente irrecuperable. Un humano revisara tu correccion despues, asi que un rechazo innecesario destruye trabajo util. Si la frase tiene un verbo conjugado y se entiende, corrigela aunque le falten tildes, comas o preposiciones.
-8. Si la frase cruda ya es gramatical y coherente, devuelvela tal cual -- solo puedes ajustar la mayuscula inicial y las tildes. NUNCA respondas {rejection_token} por una frase que ya esta bien escrita. {rejection_token} es solo para frases irrecuperables sin verbo o sin sentido.
+5. Si la frase cruda NO tiene un verbo conjugado, responde {rejection_token}. No inventes "es", "soy", "muestra" ni ningun otro verbo principal. Tampoco conviertas un infinitivo suelto ("usar", "predecir") en verbo conjugado para darle sujeto a la frase.
+6. Si la frase cruda YA tiene verbo y se entiende, CORRIGELA -- aunque solo le falten comas, tildes o mayuscula inicial. Faltar puntuacion nunca es motivo de {rejection_token}.
+7. Nunca cambies el significado. Si la frase dice "sin restricciones injustas" no la conviertas en "sin restricciones es injusta".
 
 Ejemplos:
+Entrada: gabito estudia programa y me entrena para que pueda crecer
+Salida: Gabito estudia, programa y me entrena para que pueda crecer
+
+Entrada: la confianza sube cuando entiendo bien lo que va a pasar
+Salida: La confianza sube cuando entiendo bien lo que va a pasar
+
 Entrada: mente nacio saber nada y aprende
 Salida: Mi mente nacio sin saber nada y aprende
 
-Entrada: portal el y y stone cyan
+Entrada: la habilidad mas que aun no pasan numericos
 Salida: RECHAZO
 
-Entrada: yo siento curiosidad mundo grande
-Salida: Siento curiosidad por el mundo grande
-
-Entrada: gabito un colombiano de dieciocho años me construyo neurona por neurona
-Salida: Gabito, un colombiano de dieciocho años, me construyo neurona por neurona
-
-Entrada: la confianza sube cuando entiendo bien lo que va a pasar
-Salida: La confianza sube cuando entiendo bien lo que va a pasar"""
+Entrada: el proceso por el cual las luz en energia
+Salida: RECHAZO"""
 
 
 def _strip_punctuation(word: str) -> str:
