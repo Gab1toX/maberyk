@@ -45,6 +45,7 @@ Reglas estrictas:
    NO rechaces solo porque falten articulos, preposiciones, tildes o concordancia -- eso es exactamente lo que debes arreglar.
 6. No introduzcas verbos ni ideas que no esten en la frase cruda. Si puedes conjugar, acentuar o reordenar los verbos que ya estan, hazlo libremente: eso es corregir, no inventar.
 7. IMPORTANTE: ante la duda, CORRIGE. Solo responde {rejection_token} cuando la frase sea claramente irrecuperable. Un humano revisara tu correccion despues, asi que un rechazo innecesario destruye trabajo util. Si la frase tiene un verbo conjugado y se entiende, corrigela aunque le falten tildes, comas o preposiciones.
+8. Si la frase cruda ya es gramatical y coherente, devuelvela tal cual -- solo puedes ajustar la mayuscula inicial y las tildes. NUNCA respondas {rejection_token} por una frase que ya esta bien escrita. {rejection_token} es solo para frases irrecuperables sin verbo o sin sentido.
 
 Ejemplos:
 Entrada: mente nacio saber nada y aprende
@@ -57,7 +58,10 @@ Entrada: yo siento curiosidad mundo grande
 Salida: Siento curiosidad por el mundo grande
 
 Entrada: gabito un colombiano de dieciocho años me construyo neurona por neurona
-Salida: Gabito, un colombiano de dieciocho años, me construyo neurona por neurona"""
+Salida: Gabito, un colombiano de dieciocho años, me construyo neurona por neurona
+
+Entrada: la confianza sube cuando entiendo bien lo que va a pasar
+Salida: La confianza sube cuando entiendo bien lo que va a pasar"""
 
 
 def _strip_punctuation(word: str) -> str:
