@@ -191,13 +191,13 @@ class LLMTutor:
         if text == _REJECTION_TOKEN:
             if self.debug:
                 print("[tutor:rejected] model-said-RECHAZO")
-            return {"status": "rejected", "corrected": None, "new_words": []}
+            return {"status": "rejected", "corrected": None, "new_words": [], "reason": "model-rejected"}
 
         words = text.split()
         if not text or len(words) > 25:
             if self.debug:
                 print("[tutor:rejected] empty-or-too-long")
-            return {"status": "rejected", "corrected": None, "new_words": []}
+            return {"status": "rejected", "corrected": None, "new_words": [], "reason": "empty-or-too-long"}
 
         new_words: list[str] = []
         seen: set[str] = set()
@@ -214,6 +214,6 @@ class LLMTutor:
         if len(new_words) > self.max_new_words:
             if self.debug:
                 print(f"[tutor:rejected] too-many-new-words: {new_words}")
-            return {"status": "rejected", "corrected": None, "new_words": []}
+            return {"status": "rejected", "corrected": None, "new_words": new_words, "reason": "too-many-new-words"}
 
         return {"status": "ok", "corrected": text, "new_words": new_words}

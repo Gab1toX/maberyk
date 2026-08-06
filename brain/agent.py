@@ -748,6 +748,11 @@ class Agent:
         print(f"[tutor] raw: {lm_reply}")
 
         if result["status"] == "rejected":
+            reason = result.get("reason", "unknown")
+            if reason == "too-many-new-words":
+                print(f"[tutor] rejected ({reason}: {result['new_words']})")
+            else:
+                print(f"[tutor] rejected ({reason})")
             return lm_reply, "tutor_rejected"
 
         corrected = result["corrected"]
