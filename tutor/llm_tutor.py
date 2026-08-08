@@ -61,8 +61,33 @@ Entrada: el proceso por el cual las luz en energia
 Salida: RECHAZO"""
 
 
+_KNOWN_VERBS = frozenset({
+    "es", "son", "soy", "esta", "estan", "hay", "tiene", "tienen", "fue", "fui",
+    "ha", "han", "puede", "pueden", "permite", "sube", "baja", "vive", "viven",
+    "siento", "siente", "sienten", "aprendo", "aprende", "aprendio", "aprendi",
+    "nacio", "naci", "muestra", "mueve", "muevo", "explora", "exploro",
+    "percibo", "percibe", "predigo", "predice", "entiendo", "entiende",
+    "recuerdo", "recuerda", "guardo", "guarda", "toco", "toca", "veo", "ve",
+    "hago", "hace", "digo", "dice", "quiero", "quiere", "existo", "existe",
+    "crece", "crezco", "cambia", "cambio", "regresa", "llega", "pasa",
+    "ocurre", "sirve", "ayuda", "construyo", "construye", "ensena", "enseno",
+    "estudia", "programa", "entrena", "brilla", "refleja", "abre", "cierra",
+    "elijo", "elige", "uso", "usa", "intento", "intenta", "necesito",
+    "necesita", "funciona", "depende", "coincide", "falla", "acierta",
+    "sorprende", "importa", "significa", "contiene", "incluye",
+})
+
+
 def _strip_punctuation(word: str) -> str:
     return re.sub(r"^\W+|\W+$", "", word)
+
+
+def _has_known_verb(text: str) -> bool:
+    for raw_word in text.split():
+        word = _strip_punctuation(raw_word).lower()
+        if word in _KNOWN_VERBS:
+            return True
+    return False
 
 
 def _strip_surrounding_quotes(text: str) -> str:
@@ -102,6 +127,11 @@ class LLMTutor:
         Maberyk's own vocabulary. The human's message must never be passed
         here -- the tutor only ever teaches, it never speaks for Maberyk.
         """
+        if not _has_known_verb(raw_reply):
+            if self.debug:
+                print("[tutor:rejected] no-verb-in-raw")
+            return {"status": "rejected", "corrected": None, "new_words": [], "reason": "no-verb-in-raw"}
+
         # Full vocabulary is kept only for the new_words check below -- the
         # prompt itself gets a small, relevant slice (words already present
         # in raw_reply, plus a caller-supplied common-words list) so we
