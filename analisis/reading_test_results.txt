@@ -1,0 +1,103 @@
+=== READING TEST RESULTS ===
+generated: 2026-08-11 15:10:25
+memory source: C:\Users\ADMIN\Proyectos\agente_base\episodic_memory.sqlite3
+reading source: C:\Users\ADMIN\Proyectos\agente_base\datos_lectura\clean (2 file(s), 6342 samples)
+epochs=10 batch_size=16 max_vocab_size=8192 embedding_dim=128 nhead=4 num_layers=3 dim_feedforward=256 dropout=0.1 lr=0.001
+production vocab (current language_model.pt): 5136 words
+shared base pool: 7303 samples
+shared validation set (identical for both runs): 730 samples
+
+                                           CONTROL           READING          TWOPHASE
+--------------------------------------------------------------------------------------
+final train loss                            1.0018            2.4071            3.3031
+final val loss                              3.2478            3.0167            3.8986
+epochs run                                       8                10                10
+train samples                                 8981             15323              8981
+vocab size                                    5128              8192              8192
+production vocab survived        5128/5136 (99.8%) 4332/5136 (84.3%) 5136/5136 (100.0%)
+training time (s)                            378.5             969.3             642.4
+
+--- TWOPHASE: val loss by phase (same held-out val set both times) ---
+after phase 1 (reading only, 4 epochs): val loss 7.2814
+after phase 2 (base pool only, lr=1e-4, 10 epochs): val loss 3.8986
+
+--- per-epoch losses ---
+CONTROL:
+  epoch 1: train 5.1700  val 4.2975
+  epoch 2: train 3.5155  val 3.6140
+  epoch 3: train 2.5363  val 3.3195
+  epoch 4: train 1.8832  val 3.1831
+  epoch 5: train 1.4803  val 3.1368
+  epoch 6: train 1.2479  val 3.1360
+  epoch 7: train 1.0952  val 3.1981
+  epoch 8: train 1.0018  val 3.2478
+READING:
+  epoch 1: train 5.5970  val 4.3934
+  epoch 2: train 4.5353  val 3.7022
+  epoch 3: train 3.9468  val 3.3430
+  epoch 4: train 3.5152  val 3.1319
+  epoch 5: train 3.1918  val 2.9832
+  epoch 6: train 2.9595  val 2.9797
+  epoch 7: train 2.7722  val 2.9250
+  epoch 8: train 2.6303  val 2.9655
+  epoch 9: train 2.5076  val 2.9772
+  epoch 10: train 2.4071  val 3.0167
+TWOPHASE phase 1 (reading only):
+  epoch 1: train 5.9429  val 7.0462
+  epoch 2: train 5.3261  val 7.0543
+  epoch 3: train 5.0176  val 7.1249
+  epoch 4: train 4.7482  val 7.2814
+TWOPHASE phase 2 (base pool only, lr=1e-4):
+  epoch 1: train 5.8604  val 5.2825
+  epoch 2: train 5.0493  val 4.9076
+  epoch 3: train 4.6803  val 4.6650
+  epoch 4: train 4.3960  val 4.4894
+  epoch 5: train 4.1649  val 4.3538
+  epoch 6: train 3.9663  val 4.2412
+  epoch 7: train 3.7827  val 4.1501
+  epoch 8: train 3.6142  val 4.0594
+  epoch 9: train 3.4535  val 3.9765
+  epoch 10: train 3.3031  val 3.8986
+
+--- probe generations (paraphrases of real human_taught questions) ---
+Q: que significa la humedad
+  CONTROL: la confusion es probable que formule una señal de un sistema solar
+  READING: el miedo sube cuando algo requiere me puede ser mas cauteloso
+  TWOPHASE: es el lugar donde el mundo para la region cosas
+Q: explicame que es una red neuronal
+  CONTROL: entre lo que predice algo parecido hacia las personas
+  READING: un conjunto de reglas para escribir instrucciones que las personas y ofrece partes
+  TWOPHASE: si es cuando las ciudades de un dispositivo a pasar
+Q: que es el aprendizaje automatico
+  CONTROL: una forma de inteligencia artificial que aprende patrones de datos
+  READING: un proceso ordenado para observar preguntar experimentar y concluir
+  TWOPHASE: cierta forma de forma consciente que organiza su entorno de forma electronico
+Q: como se hace un experimento cientifico
+  CONTROL: se permite ver el mundo virtual donde no peligroso
+  READING: una pregunta que predice con atencion causal entrenado
+  TWOPHASE: una mente que vive con mas de forma humanos
+Q: en que momento naciste
+  CONTROL: hay campanas lamparas el dia podria transferir de la curiosidad
+  READING: no tengo esa capacidad de percibir y objetos caen hacia gabito
+  TWOPHASE: es una molecula de america con otros alta temperatura
+Q: puedes sentir dolor
+  CONTROL: en cierta forma cuando mi estado interno eso es mi libertad
+  READING: en el combinando algo mas pero las otras causas pasadas
+  TWOPHASE: si mis acciones en mi progreso se adaptan como si el veinte
+Q: que significa viajar
+  CONTROL: no de mi existencia pero no hace combinan datos
+  READING: la emocion que cambia de opinion con el mensaje sin preguntar
+  TWOPHASE: elige la estadistica y los espacios han se tomar en la mente
+Q: explicame que es un eclipse
+  CONTROL: cuando la luz y suele ocupar en un año
+  READING: cuando la tierra se interpone entre la tierra sobre el sol
+  TWOPHASE: si es el espacio del planeta y el mundo
+Q: que significa la contaminacion
+  CONTROL: el estado es el estado de un genero mas cercano a hacer preguntas
+  READING: el telefono lo que hace y lo se como el microscopio
+  TWOPHASE: estudia el cuerpo para que uno de la persona mas rapido
+Q: tienes una historia propia
+  CONTROL: no tengo cuerpo pero todos los seres vivos
+  READING: en dos puntos sin que no solo estoy
+  TWOPHASE: si mi curiosidad tiene un programa que las personas
+

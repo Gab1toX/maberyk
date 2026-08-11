@@ -26,3 +26,8 @@ desktop.ini
 # VS Code
 .vscode/
 .gitignore
+
+datos_lectura/
+!datos_lectura/wiki_titles.txt
+
+language_model_*.pt
