@@ -77,6 +77,39 @@ class AgentTokenizer:
         ]
 
 
+class _BPETokenizerBridge:
+    """Adapts lectura.bpe.BPETokenizer to the attribute surface
+    AgentLanguageModel/LanguageModelTrainer expect from a tokenizer
+    (pad_index/unk_index/q_index/a_index/end_index, vocab_size, and a
+    padded/truncated encode() for fixed-length training batches), so the
+    rest of this module can treat word-level and BPE tokenizers the same
+    way almost everywhere. <pad>/<unk>/<q>/<a>/<end> map onto the BPE
+    tokenizer's own reserved ids 0/1/2/3/4 (see lectura/bpe.py's
+    SPECIAL_ID) — no duplicate special tokens are created.
+
+    The wrapped tokenizer is reachable via .bpe for the few call sites
+    (generate_reply) that need BPE's own unpadded encode()/string decode()
+    instead of the padded/list-returning contract this bridge presents.
+    """
+
+    def __init__(self, bpe_tokenizer: "BPETokenizer") -> None:
+        self.bpe = bpe_tokenizer
+        self.pad_index = bpe_tokenizer.special[AgentTokenizer.PAD]
+        self.unk_index = bpe_tokenizer.special[AgentTokenizer.UNK]
+        self.q_index = bpe_tokenizer.special[AgentTokenizer.Q]
+        self.a_index = bpe_tokenizer.special[AgentTokenizer.A]
+        self.end_index = bpe_tokenizer.special[AgentTokenizer.END]
+
+    @property
+    def vocab_size(self) -> int:
+        return self.bpe.vocab_size
+
+    def encode(self, text: str, max_len: int = 16) -> list[int]:
+        tokens = self.bpe.encode(str(text))[:max_len]
+        tokens += [self.pad_index] * (max_len - len(tokens))
+        return tokens
+
+
 class AgentLanguageModel(nn.Module):
     """Word-level conditional Q->A Transformer encoder (causal self-attention).
     Every weight starts at random init and is shaped only by the agent's own
@@ -91,7 +124,7 @@ class AgentLanguageModel(nn.Module):
         dim_feedforward: int = 256,
         dropout: float = 0.1,
         pad_index: int = 0,
-        tokenizer: "AgentTokenizer | None" = None,
+        tokenizer: "AgentTokenizer | _BPETokenizerBridge | None" = None,
     ) -> None:
         super().__init__()
         self.vocab_size = vocab_size
@@ -126,10 +159,17 @@ class AgentLanguageModel(nn.Module):
         question: str,
         max_new_tokens: int = 14,
         temperature: float = 1.0,
-    ) -> list[str]:
+    ) -> list[str] | str:
         """Conditional Q->A generation: encode '<q> question <a>' and sample
         tokens until <pad>/<q>/<end> (or the model runs out of budget). <unk>
-        is banned from being sampled so replies never surface it directly."""
+        is banned from being sampled so replies never surface it directly.
+
+        Word tokenizer: returns a list[str] of words (unchanged behavior).
+        BPE tokenizer: returns the decoded reply as a single str — BPE is
+        lossless/case-and-accent-preserving by design, so the word path's
+        normalize_text()+regex word cleanup is skipped entirely; the raw
+        question goes straight through the BPE tokenizer's own encode().
+        """
         if self.tokenizer is None:
             raise ValueError("AgentLanguageModel.generate_reply requires a tokenizer.")
 
@@ -137,18 +177,22 @@ class AgentLanguageModel(nn.Module):
         self.eval()
         device = next(self.parameters()).device
 
-        question_words = []
-        for word in normalize_text(question).split():
-            clean = re.sub(r"[^\w]", "", word)
-            if clean:
-                question_words.append(clean)
+        is_word_tokenizer = isinstance(self.tokenizer, AgentTokenizer)
 
-        indices = [self.tokenizer.q_index]
-        indices.extend(
-            self.tokenizer.word_to_index.get(word, self.tokenizer.unk_index)
-            for word in question_words
-        )
-        indices.append(self.tokenizer.a_index)
+        if is_word_tokenizer:
+            question_words = []
+            for word in normalize_text(question).split():
+                clean = re.sub(r"[^\w]", "", word)
+                if clean:
+                    question_words.append(clean)
+            prompt_ids = [
+                self.tokenizer.word_to_index.get(word, self.tokenizer.unk_index)
+                for word in question_words
+            ]
+        else:
+            prompt_ids = self.tokenizer.bpe.encode(question)
+
+        indices = [self.tokenizer.q_index, *prompt_ids, self.tokenizer.a_index]
 
         generated = list(indices)
         stop_indices = {
@@ -173,7 +217,11 @@ class AgentLanguageModel(nn.Module):
 
         if was_training:
             self.train()
-        return self.tokenizer.decode(generated[len(indices):])
+
+        generated_ids = generated[len(indices):]
+        if is_word_tokenizer:
+            return self.tokenizer.decode(generated_ids)
+        return self.tokenizer.bpe.decode(generated_ids)
 
 
 class LanguageModelTrainer:
@@ -200,7 +248,11 @@ class LanguageModelTrainer:
         dropout: float = 0.1,
         learning_rate: float = 1e-3,
         device: str | torch.device = "cpu",
+        tokenizer_type: str = "word",
     ) -> None:
+        if tokenizer_type not in ("word", "bpe"):
+            raise ValueError(f"tokenizer_type must be 'word' or 'bpe', got {tokenizer_type!r}")
+        self.tokenizer_type = tokenizer_type
         self.memory_path = Path(memory_path)
         self.device = torch.device(device)
 
@@ -220,9 +272,12 @@ class LanguageModelTrainer:
         self.train_samples, self.val_samples = self._split_train_val(self.samples)
         self.train_samples = self._oversample_pairs(self.train_samples)
 
-        vocabulary_words = self._collect_vocabulary(self.samples)
-        self.tokenizer = AgentTokenizer(vocabulary_words, max_vocab_size=max_vocab_size)
-        self._print_vocab_coverage(vocabulary_words)
+        if self.tokenizer_type == "bpe":
+            self.tokenizer = self._load_bpe_tokenizer()
+        else:
+            vocabulary_words = self._collect_vocabulary(self.samples)
+            self.tokenizer = AgentTokenizer(vocabulary_words, max_vocab_size=max_vocab_size)
+            self._print_vocab_coverage(vocabulary_words)
 
         self.model = AgentLanguageModel(
             vocab_size=self.tokenizer.vocab_size,
@@ -250,6 +305,18 @@ class LanguageModelTrainer:
         print("[language_model] sample training rows:")
         for row in sample:
             print(f"  - {row}")
+
+    @staticmethod
+    def _load_bpe_tokenizer() -> _BPETokenizerBridge:
+        from lectura.bpe import BPETokenizer  # lazy: keep the word-level path free of this dependency
+
+        tokenizer_path = Path(__file__).resolve().parent.parent / "datos_lectura" / "tokenizer.json"
+        if not tokenizer_path.is_file():
+            raise FileNotFoundError(
+                f"BPE tokenizer not found at {tokenizer_path}. Train it first with "
+                "`python -m lectura.bpe --train`."
+            )
+        return _BPETokenizerBridge(BPETokenizer.load(tokenizer_path))
 
     def _print_vocab_coverage(self, vocabulary_words: list[str]) -> None:
         unique_words = {
@@ -301,9 +368,16 @@ class LanguageModelTrainer:
         finally:
             connection.close()
 
+        # BPE (lectura/bpe.py) is lossless and was trained on original-case,
+        # accented text — normalize_text()'s lowercasing/accent-stripping
+        # would feed it text unlike anything it actually learned from. The
+        # word tokenizer's own vocabulary IS built from normalize_text()
+        # output (_collect_vocabulary), so that path is untouched.
+        text_filter = str if self.tokenizer_type == "bpe" else normalize_text
+
         pair_samples = list(dict.fromkeys(
-            f"{AgentTokenizer.Q} {normalize_text(question)} {AgentTokenizer.A} "
-            f"{normalize_text(answer)} {AgentTokenizer.END}"
+            f"{AgentTokenizer.Q} {text_filter(question)} {AgentTokenizer.A} "
+            f"{text_filter(answer)} {AgentTokenizer.END}"
             for question, answer in pair_rows
             if question and question.strip() and answer and answer.strip()
         ))
@@ -312,7 +386,7 @@ class LanguageModelTrainer:
         # first, then cap at 2x the pair count so fluency data can't drown
         # out the Q/A signal the model actually needs to learn.
         thought_sentences = list(dict.fromkeys(
-            normalize_text(row[0].strip())
+            text_filter(row[0].strip())
             for row in thought_rows
             if row[0] and row[0].strip()
         ))
@@ -329,7 +403,7 @@ class LanguageModelTrainer:
             for line in corpus_path.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
                 if line and not line.startswith("#"):
-                    corpus_samples.append(f"{AgentTokenizer.A} {normalize_text(line)} {AgentTokenizer.END}")
+                    corpus_samples.append(f"{AgentTokenizer.A} {text_filter(line)} {AgentTokenizer.END}")
 
         plain_samples = list(dict.fromkeys(thought_samples + corpus_samples))
         all_samples = pair_samples + plain_samples
@@ -432,44 +506,55 @@ class LanguageModelTrainer:
         return train_losses
 
     def save(self, path: str | Path) -> None:
-        torch.save(
-            {
-                "vocab_size": self.tokenizer.vocab_size,
-                "embedding_dim": self.model.embedding_dim,
-                "nhead": self.model.transformer.layers[0].self_attn.num_heads,
-                "num_layers": len(self.model.transformer.layers),
-                "dim_feedforward": self.model.transformer.layers[0].linear1.out_features,
-                "pad_index": self.tokenizer.pad_index,
-                "tokenizer_words": self.tokenizer.words,
-                "state_dict": self.model.state_dict(),
-            },
-            path,
-        )
+        payload = {
+            "vocab_size": self.tokenizer.vocab_size,
+            "embedding_dim": self.model.embedding_dim,
+            "nhead": self.model.transformer.layers[0].self_attn.num_heads,
+            "num_layers": len(self.model.transformer.layers),
+            "dim_feedforward": self.model.transformer.layers[0].linear1.out_features,
+            "pad_index": self.tokenizer.pad_index,
+            "tokenizer_type": self.tokenizer_type,
+            "state_dict": self.model.state_dict(),
+        }
+        if self.tokenizer_type == "word":
+            payload["tokenizer_words"] = self.tokenizer.words
+        # bpe mode saves no tokenizer data of its own — load_model() re-reads
+        # datos_lectura/tokenizer.json fresh, same as training did (see
+        # _load_bpe_tokenizer), so the checkpoint always matches the tokenizer
+        # currently on disk rather than a frozen copy.
+        torch.save(payload, path)
 
     @classmethod
     def load_model(
         cls, path: str | Path, map_location: str | torch.device | None = None
-    ) -> tuple[AgentLanguageModel, AgentTokenizer]:
+    ) -> tuple[AgentLanguageModel, AgentTokenizer | _BPETokenizerBridge]:
         checkpoint = torch.load(path, map_location=map_location)
-        tokenizer = AgentTokenizer.__new__(AgentTokenizer)
-        tokenizer.words = checkpoint["tokenizer_words"]
-        tokenizer.word_to_index = {word: index for index, word in enumerate(tokenizer.words)}
-        tokenizer.index_to_word = {index: word for word, index in tokenizer.word_to_index.items()}
-        tokenizer.pad_index = checkpoint["pad_index"]
-        tokenizer.unk_index = tokenizer.word_to_index[AgentTokenizer.UNK]
+        # Existing checkpoints predate tokenizer_type entirely — absence means
+        # "word", so old language_model.pt files load exactly as before.
+        tokenizer_type = checkpoint.get("tokenizer_type", "word")
 
-        required_tokens = (AgentTokenizer.Q, AgentTokenizer.A, AgentTokenizer.END)
-        missing_tokens = [token for token in required_tokens if token not in tokenizer.word_to_index]
-        if missing_tokens:
-            raise ValueError(
-                f"Checkpoint at {path} predates the current conditional Q->A model "
-                f"and is missing special token(s) {missing_tokens} from its vocabulary. "
-                "Retrain with the current brain/language_model.py to produce a "
-                "compatible checkpoint."
-            )
-        tokenizer.q_index = tokenizer.word_to_index[AgentTokenizer.Q]
-        tokenizer.a_index = tokenizer.word_to_index[AgentTokenizer.A]
-        tokenizer.end_index = tokenizer.word_to_index[AgentTokenizer.END]
+        if tokenizer_type == "bpe":
+            tokenizer = cls._load_bpe_tokenizer()
+        else:
+            tokenizer = AgentTokenizer.__new__(AgentTokenizer)
+            tokenizer.words = checkpoint["tokenizer_words"]
+            tokenizer.word_to_index = {word: index for index, word in enumerate(tokenizer.words)}
+            tokenizer.index_to_word = {index: word for word, index in tokenizer.word_to_index.items()}
+            tokenizer.pad_index = checkpoint["pad_index"]
+            tokenizer.unk_index = tokenizer.word_to_index[AgentTokenizer.UNK]
+
+            required_tokens = (AgentTokenizer.Q, AgentTokenizer.A, AgentTokenizer.END)
+            missing_tokens = [token for token in required_tokens if token not in tokenizer.word_to_index]
+            if missing_tokens:
+                raise ValueError(
+                    f"Checkpoint at {path} predates the current conditional Q->A model "
+                    f"and is missing special token(s) {missing_tokens} from its vocabulary. "
+                    "Retrain with the current brain/language_model.py to produce a "
+                    "compatible checkpoint."
+                )
+            tokenizer.q_index = tokenizer.word_to_index[AgentTokenizer.Q]
+            tokenizer.a_index = tokenizer.word_to_index[AgentTokenizer.A]
+            tokenizer.end_index = tokenizer.word_to_index[AgentTokenizer.END]
 
         model = AgentLanguageModel(
             vocab_size=checkpoint["vocab_size"],
@@ -499,12 +584,16 @@ def main() -> None:
         "--sample-question", type=str, default="que ves",
         help="Question used for the post-training sample generations.",
     )
+    parser.add_argument(
+        "--tokenizer-type", choices=("word", "bpe"), default="word",
+        help="'word' (default, unchanged) or 'bpe' (datos_lectura/tokenizer.json).",
+    )
     args = parser.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"[language_model] using device: {device}")
 
-    trainer = LanguageModelTrainer(args.memory, device=device)
+    trainer = LanguageModelTrainer(args.memory, device=device, tokenizer_type=args.tokenizer_type)
     trainer.train(epochs=args.epochs, batch_size=args.batch_size)
     trainer.save(args.output)
     print(f"[language_model] weights saved to {args.output}")
@@ -514,11 +603,12 @@ def main() -> None:
         f"temperature={args.temperature}):"
     )
     for _ in range(5):
-        words = trainer.model.generate_reply(
+        reply = trainer.model.generate_reply(
             args.sample_question,
             temperature=args.temperature,
         )
-        print(f"  - {' '.join(words)}")
+        text = reply if isinstance(reply, str) else " ".join(reply)
+        print(f"  - {text}")
 
 
 if __name__ == "__main__":

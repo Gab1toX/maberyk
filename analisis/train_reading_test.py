@@ -23,15 +23,39 @@ set so val loss is directly comparable:
      before any reading word fills the rest of the budget — unlike READING,
      where pure frequency ranking bumped ~15% of production words out
      (see language_model_reading.pt's run: 4343/5136 survived).
+  D) BPE — CONTROL's exact data (base pool only, no reading text — this
+     isolates the tokenizer change from the reading-text change) and exact
+     hyperparameters/epochs, but tokenizer_type="bpe" instead of the
+     word-level AgentTokenizer: brain/language_model.py loads
+     datos_lectura/tokenizer.json (lectura.bpe) and encodes/decodes through
+     it. Its val loss is NOT comparable to the other runs' — BPE tokens are
+     sub-word pieces, not whole words, so cross-entropy is over a different
+     vocabulary and different-length sequences per sample. The comparison
+     that matters for this run is the probe generations, not the loss
+     number (see the CAVEAT line in the written report).
+  E) BPE_READING — BPE's tokenizer_type="bpe", but CONTROL's base pool PLUS
+     the cleaned reading text (same combined data as READING). Isolates
+     "does reading text help" for the BPE path the way READING does for the
+     word path.
 
-brain/language_model.py's own loader (_load_training_samples) trims episode
-thoughts with an unseeded random.sample() and reshuffles with the unseeded
-global random module, so calling it twice independently would silently hand
-each run a different data pool and a different validation split — making
-the comparison meaningless. To guarantee a fair test, the loader runs
-exactly ONCE here; its train/val split is computed once and reused, with
-reading samples only ever appended to train sides, never val, so val is
-byte-for-byte identical across all three runs.
+brain/language_model.py now skips normalize_text() entirely when
+tokenizer_type == "bpe" (lowercasing/accent-stripping text the BPE
+tokenizer was trained to preserve made no sense — see its own change
+report). That means the base pool exists in TWO representations here: raw
+(unnormalized, for D/E) and normalized (for A/B/C) — but they must still
+share the exact same 730-row validation SPLIT, or "same held-out val set"
+stops being true. _load_training_samples() also trims episode thoughts with
+an unseeded random.sample() and reshuffles with the unseeded global random
+module, so calling it twice independently (once per representation) would
+silently hand word-mode and bpe-mode runs two different validation splits
+even from identical DB content. So the loader runs exactly ONCE here, always
+with tokenizer_type="bpe" (raw text, losslessly forward-transformable), and
+the split happens once on that raw pool; the normalized pool used by
+A/B/C is then derived by applying normalize_text() to each already-split
+raw sample — same rows, same split, just re-cased. Reading samples get the
+same raw-then-derived-normalized treatment. Reading text is only ever
+appended to train sides, never val, so val is the same underlying rows in
+every run, always.
 
 Every method actually used (_load_training_samples, _split_train_val,
 _oversample_pairs, _collect_vocabulary, _run_epoch, generate_reply, save,
@@ -41,9 +65,10 @@ logic is build_priority_tokenizer() for run C's vocabulary (AgentTokenizer
 itself only supports pure-frequency ranking, which is exactly what run C
 needs to NOT do — see its docstring).
 
-Writes language_model_control.pt, language_model_reading.pt, and
-language_model_twophase.pt (never language_model.pt or agent_state.pt) plus
-a side-by-side summary at analisis/reading_test_results.txt.
+Writes language_model_control.pt, language_model_reading.pt,
+language_model_twophase.pt, language_model_bpe.pt, and
+language_model_bpe_reading.pt (never language_model.pt or agent_state.pt)
+plus a side-by-side summary at analisis/reading_test_results.txt.
 
 Usage:
     python analisis/train_reading_test.py
@@ -69,6 +94,15 @@ PRODUCTION_CHECKPOINT = PROJECT_ROOT / "language_model.pt"
 CONTROL_OUTPUT = PROJECT_ROOT / "language_model_control.pt"
 READING_OUTPUT = PROJECT_ROOT / "language_model_reading.pt"
 TWOPHASE_OUTPUT = PROJECT_ROOT / "language_model_twophase.pt"
+BPE_OUTPUT = PROJECT_ROOT / "language_model_bpe.pt"
+BPE_READING_OUTPUT = PROJECT_ROOT / "language_model_bpe_reading.pt"
+BPE_VAL_LOSS_CAVEAT = (
+    "CAVEAT: BPE/BPE_READING's val loss is NOT directly comparable to "
+    "CONTROL/READING/TWOPHASE's. BPE tokens are sub-word pieces, not whole words, so "
+    "cross-entropy is computed over a different vocabulary and different-length token "
+    "sequences per sample than the word-level runs. The comparison that matters here is "
+    "the probe generations below, not the loss numbers in the table above."
+)
 RESULTS_PATH = Path(__file__).resolve().parent / "reading_test_results.txt"
 
 # Same architecture/hyperparameters/vocab cap production training uses
@@ -103,7 +137,14 @@ PROBE_QUESTIONS = [
 ]
 
 
-def build_reading_samples() -> list[str]:
+def build_reading_samples(normalize: bool) -> tuple[list[str], list[Path]]:
+    """normalize=False (raw, matches lectura/bpe.py's own training text) for
+    BPE-mode runs; normalize=True (lowercase + strip accents, matching the
+    word tokenizer's own vocabulary) for word-mode runs. Deduping happens
+    after the normalize/no-op choice, on whichever representation is being
+    built, so each variant's sample count matches what that mode would
+    naturally produce on its own.
+    """
     if not CLEAN_DIR.is_dir():
         raise FileNotFoundError(
             f"{CLEAN_DIR} not found — run `python -m lectura.ingest` first."
@@ -117,24 +158,49 @@ def build_reading_samples() -> list[str]:
         for line in path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if line:
-                samples.append(f"{AgentTokenizer.A} {normalize_text(line)} {AgentTokenizer.END}")
+                text = normalize_text(line) if normalize else line
+                samples.append(f"{AgentTokenizer.A} {text} {AgentTokenizer.END}")
     return list(dict.fromkeys(samples)), clean_files
 
 
-def load_base_split() -> tuple[LanguageModelTrainer, list[str], list[str], list[str]]:
-    # scratch is a real LanguageModelTrainer instance (via __new__, __init__
-    # skipped) used purely to call its own bound methods below — the loader
-    # only touches self.memory_path, so this is safe and avoids duplicating
-    # any of its logic.
+def load_base_split() -> tuple[LanguageModelTrainer, dict[str, list[str]], dict[str, list[str]]]:
+    """Loads the base pool ONCE, always with tokenizer_type="bpe" so the text
+    stays raw/unnormalized (see FIX 1 in brain/language_model.py), and splits
+    it ONCE. That split is the single shared source of truth every run in
+    this script reuses:
+      - "raw" (unnormalized) feeds BPE-mode runs (D, E) directly.
+      - "normalized" is derived by applying normalize_text() to each already-
+        split raw sample — same rows, same train/val membership, just
+        re-cased — and feeds word-mode runs (A, B, C).
+    _load_training_samples() trims episode thoughts with an unseeded
+    random.sample() and reshuffles with the unseeded global random module, so
+    calling it a second time (even with identical DB content) could hand the
+    two representations different validation splits. Deriving instead of
+    re-loading guarantees "same held-out val set" is actually true.
+
+    scratch itself is a real LanguageModelTrainer instance (via __new__,
+    __init__ skipped) used purely to call its own bound methods — safe since
+    _load_training_samples/_split_train_val/_oversample_pairs/
+    _collect_vocabulary only ever touch self.memory_path and (now)
+    self.tokenizer_type, both set below.
+    """
     scratch = LanguageModelTrainer.__new__(LanguageModelTrainer)
+    scratch.tokenizer_type = "bpe"
     scratch.memory_path = MEMORY_PATH
 
-    base_samples = scratch._load_training_samples()
-    if not base_samples:
+    base_samples_raw = scratch._load_training_samples()
+    if not base_samples_raw:
         raise ValueError(f"No training samples found via {MEMORY_PATH}")
 
-    pre_oversample_train, val_samples = scratch._split_train_val(base_samples)
-    return scratch, base_samples, pre_oversample_train, val_samples
+    pre_oversample_train_raw, val_samples_raw = scratch._split_train_val(base_samples_raw)
+
+    raw = {
+        "base_samples": base_samples_raw,
+        "pre_oversample_train": pre_oversample_train_raw,
+        "val_samples": val_samples_raw,
+    }
+    normalized = {key: [normalize_text(sample) for sample in samples] for key, samples in raw.items()}
+    return scratch, raw, normalized
 
 
 def build_trainer(
@@ -148,9 +214,48 @@ def build_trainer(
     tokenizer = AgentTokenizer(vocabulary_words, max_vocab_size=MAX_VOCAB_SIZE)
 
     trainer = LanguageModelTrainer.__new__(LanguageModelTrainer)
+    trainer.tokenizer_type = "word"  # required by save() — see build_bpe_trainer for the bpe counterpart
     trainer.memory_path = MEMORY_PATH
     trainer.device = torch.device(DEVICE)
     trainer.samples = pool_samples
+    trainer.train_samples = train_samples
+    trainer.val_samples = list(val_samples)
+    trainer.tokenizer = tokenizer
+    trainer.model = AgentLanguageModel(
+        vocab_size=tokenizer.vocab_size,
+        embedding_dim=EMBEDDING_DIM,
+        nhead=NHEAD,
+        num_layers=NUM_LAYERS,
+        dim_feedforward=DIM_FEEDFORWARD,
+        dropout=DROPOUT,
+        pad_index=tokenizer.pad_index,
+        tokenizer=tokenizer,
+    ).to(trainer.device)
+    trainer.optimizer = torch.optim.Adam(trainer.model.parameters(), lr=LEARNING_RATE)
+    trainer.loss_fn = nn.CrossEntropyLoss(ignore_index=tokenizer.pad_index)
+    return trainer
+
+
+def build_bpe_trainer(
+    scratch: LanguageModelTrainer,
+    base_samples: list[str],
+    pre_oversample_train: list[str],
+    val_samples: list[str],
+) -> LanguageModelTrainer:
+    """Run D: CONTROL's exact base-pool data (no reading text), but tokenized
+    through datos_lectura/tokenizer.json instead of AgentTokenizer. Reuses
+    LanguageModelTrainer._load_bpe_tokenizer — the same method
+    brain/language_model.py's own __init__/load_model use for tokenizer_type
+    "bpe" — so this is exactly what production BPE training would load.
+    """
+    train_samples = scratch._oversample_pairs(pre_oversample_train)
+    tokenizer = LanguageModelTrainer._load_bpe_tokenizer()
+
+    trainer = LanguageModelTrainer.__new__(LanguageModelTrainer)
+    trainer.tokenizer_type = "bpe"
+    trainer.memory_path = MEMORY_PATH
+    trainer.device = torch.device(DEVICE)
+    trainer.samples = base_samples
     trainer.train_samples = train_samples
     trainer.val_samples = list(val_samples)
     trainer.tokenizer = tokenizer
@@ -263,10 +368,18 @@ def run_training(trainer: LanguageModelTrainer, label: str) -> tuple[list[float]
 
 
 def generate_probes(trainer: LanguageModelTrainer) -> dict[str, str]:
+    # generate_reply() returns list[str] for the word tokenizer, str for BPE
+    # (brain/language_model.py's generate_reply docstring) — join only applies
+    # to the former; naively " ".join()-ing a BPE string would space out its
+    # individual characters instead.
     replies = {}
     for question in PROBE_QUESTIONS:
-        words = trainer.model.generate_reply(question, temperature=GENERATION_TEMPERATURE)
-        replies[question] = " ".join(words) if words else "(empty)"
+        reply = trainer.model.generate_reply(question, temperature=GENERATION_TEMPERATURE)
+        if isinstance(reply, str):
+            text = reply
+        else:
+            text = " ".join(reply) if reply else ""
+        replies[question] = text if text else "(empty)"
     return replies
 
 
@@ -308,6 +421,7 @@ def train_two_phase(
     ).to(device)
 
     trainer = LanguageModelTrainer.__new__(LanguageModelTrainer)
+    trainer.tokenizer_type = "word"  # required by save()
     trainer.memory_path = MEMORY_PATH
     trainer.device = device
     trainer.tokenizer = tokenizer
@@ -363,15 +477,26 @@ def main() -> None:
     )
     production_vocab = set(prod_tokenizer.words)
 
-    print(f"[reading_test] loading base training pool from {MEMORY_PATH} (one read, shared by both runs)")
-    scratch, base_samples, pre_oversample_train, val_samples = load_base_split()
+    print(f"[reading_test] loading base training pool from {MEMORY_PATH} (one read, shared by every run)")
+    scratch, raw, normalized = load_base_split()
+    base_samples, pre_oversample_train, val_samples = (
+        normalized["base_samples"], normalized["pre_oversample_train"], normalized["val_samples"]
+    )
+    base_samples_raw, pre_oversample_train_raw, val_samples_raw = (
+        raw["base_samples"], raw["pre_oversample_train"], raw["val_samples"]
+    )
     print(
         f"[reading_test] base pool: {len(base_samples)} samples, "
-        f"{len(pre_oversample_train)} train (pre-oversample) / {len(val_samples)} val"
+        f"{len(pre_oversample_train)} train (pre-oversample) / {len(val_samples)} val "
+        f"(same split, raw+normalized representations)"
     )
 
-    reading_samples, clean_files = build_reading_samples()
-    print(f"[reading_test] {len(reading_samples)} reading samples from {len(clean_files)} file(s) under {CLEAN_DIR}")
+    reading_samples, clean_files = build_reading_samples(normalize=True)
+    reading_samples_raw, _ = build_reading_samples(normalize=False)
+    print(
+        f"[reading_test] {len(reading_samples)} reading samples (normalized) / "
+        f"{len(reading_samples_raw)} (raw) from {len(clean_files)} file(s) under {CLEAN_DIR}"
+    )
 
     runs = {}
     for label, pool_samples, train_pre_oversample, output_path in (
@@ -410,6 +535,41 @@ def main() -> None:
         scratch, base_samples, pre_oversample_train, val_samples, reading_samples, production_vocab_words
     )
 
+    for label, pool_samples_raw, train_pre_oversample_raw, output_path in (
+        ("BPE", base_samples_raw, pre_oversample_train_raw, BPE_OUTPUT),
+        (
+            "BPE_READING",
+            base_samples_raw + reading_samples_raw,
+            pre_oversample_train_raw + reading_samples_raw,
+            BPE_READING_OUTPUT,
+        ),
+    ):
+        print(f"\n=== training {label} ===")
+        start = time.monotonic()
+        bpe_trainer = build_bpe_trainer(scratch, pool_samples_raw, train_pre_oversample_raw, val_samples_raw)
+        print(
+            f"[{label}] vocab size {bpe_trainer.tokenizer.vocab_size} (datos_lectura/tokenizer.json), "
+            f"{len(bpe_trainer.train_samples)} train samples, {len(bpe_trainer.val_samples)} val samples"
+        )
+        bpe_train_losses, bpe_val_losses = run_training(bpe_trainer, label)
+        bpe_elapsed = time.monotonic() - start
+        print(f"[{label}] training finished in {bpe_elapsed:.1f}s")
+
+        bpe_trainer.save(output_path)
+        print(f"[{label}] weights saved to {output_path}")
+
+        bpe_probes = generate_probes(bpe_trainer)
+
+        runs[label] = {
+            "trainer": bpe_trainer,
+            "train_losses": bpe_train_losses,
+            "val_losses": bpe_val_losses,
+            "vocab_size": bpe_trainer.tokenizer.vocab_size,
+            "survived": None,  # not a word vocab — see BPE_VAL_LOSS_CAVEAT / write_results
+            "probes": bpe_probes,
+            "elapsed": bpe_elapsed,
+        }
+
     write_results(production_vocab, base_samples, val_samples, reading_samples, clean_files, runs)
 
 
@@ -429,7 +589,7 @@ def write_results(production_vocab, base_samples, val_samples, reading_samples, 
     lines.append(f"shared validation set (identical for both runs): {len(val_samples)} samples")
     lines.append("")
 
-    run_labels = ("CONTROL", "READING", "TWOPHASE")
+    run_labels = ("CONTROL", "READING", "TWOPHASE", "BPE", "BPE_READING")
     header = f"{'':32}" + "".join(f"{label:>18}" for label in run_labels)
     lines.append(header)
     lines.append("-" * len(header))
@@ -445,9 +605,14 @@ def write_results(production_vocab, base_samples, val_samples, reading_samples, 
     row("vocab size", lambda r: str(r["vocab_size"]))
     row(
         "production vocab survived",
-        lambda r: f"{r['survived']}/{len(production_vocab)} ({r['survived'] / len(production_vocab) * 100:.1f}%)",
+        lambda r: (
+            f"{r['survived']}/{len(production_vocab)} ({r['survived'] / len(production_vocab) * 100:.1f}%)"
+            if r["survived"] is not None else "n/a (not word vocab)"
+        ),
     )
     row("training time (s)", lambda r: f"{r['elapsed']:.1f}")
+    lines.append("")
+    lines.append(BPE_VAL_LOSS_CAVEAT)
     lines.append("")
 
     lines.append("--- TWOPHASE: val loss by phase (same held-out val set both times) ---")
@@ -459,7 +624,7 @@ def write_results(production_vocab, base_samples, val_samples, reading_samples, 
     lines.append("")
 
     lines.append("--- per-epoch losses ---")
-    for label in ("CONTROL", "READING"):
+    for label in ("CONTROL", "READING", "BPE", "BPE_READING"):
         lines.append(f"{label}:")
         run = runs[label]
         for i, (t_loss, v_loss) in enumerate(zip(run["train_losses"], run["val_losses"]), start=1):
