@@ -1,147 +1,143 @@
 === READING TEST RESULTS ===
-generated: 2026-08-11 18:33:25
+generated: 2026-08-12 22:09:22
 memory source: C:\Users\ADMIN\Proyectos\agente_base\episodic_memory.sqlite3
-reading source: C:\Users\ADMIN\Proyectos\agente_base\datos_lectura\clean (2 file(s), 6342 samples)
-epochs=10 batch_size=16 max_vocab_size=8192 embedding_dim=128 nhead=4 num_layers=3 dim_feedforward=256 dropout=0.1 lr=0.001
+reading source: C:\Users\ADMIN\Proyectos\agente_base\datos_lectura\clean (4 file(s), 35163 samples)
+epoch budgets: CONTROL=10, READING=30 (early stop after 5 epochs without a >0.01 val loss improvement) batch_size=16 max_vocab_size=16384 embedding_dim=128 nhead=4 num_layers=3 dim_feedforward=256 dropout=0.1 lr=0.001 seeds=[0, 1, 2]
 production vocab (current language_model.pt): 5136 words
 shared base pool: 7303 samples
-shared validation set (identical for both runs): 730 samples
+shared validation set (identical for all 6 runs): 730 samples
 
-                                           CONTROL           READING          TWOPHASE               BPE       BPE_READING
---------------------------------------------------------------------------------------------------------------------------
-final train loss                            1.0262            2.4156            3.2990            1.0819            2.9640
-final val loss                              3.3304            3.0630            3.8664            3.0950            2.8696
-epochs run                                       8                10                10                10                10
-train samples                                 8949             15291              8949              8949             15292
-vocab size                                    5128              8192              8192              3000              3000
-production vocab survived        5128/5136 (99.8%) 4332/5136 (84.3%)5136/5136 (100.0%)n/a (not word vocab)n/a (not word vocab)
-training time (s)                            381.6             999.9             701.0             400.0             614.5
+--- CONTROL: best val loss per seed (epoch budget 10, vocab 5128, production vocab survived 5128/5136) ---
+  seed 0: best val loss 2.8766 at epoch 6/10 (hit epoch budget (10) without early-stopping, 495.7s, saved to language_model_control_s0.pt)
+  seed 1: best val loss 2.8716 at epoch 6/10 (hit epoch budget (10) without early-stopping, 463.0s, saved to language_model_control_s1.pt)
+  seed 2: best val loss 2.8998 at epoch 6/10 (hit epoch budget (10) without early-stopping, 468.8s, saved to language_model_control_s2.pt)
+  mean = 2.8827, std = 0.0150, best seed = 1
 
-CAVEAT: BPE/BPE_READING's val loss is NOT directly comparable to CONTROL/READING/TWOPHASE's. BPE tokens are sub-word pieces, not whole words, so cross-entropy is computed over a different vocabulary and different-length token sequences per sample than the word-level runs. The comparison that matters here is the probe generations below, not the loss numbers in the table above.
+--- READING: best val loss per seed (epoch budget 30, vocab 16384, production vocab survived 5136/5136) ---
+  seed 0: best val loss 3.1046 at epoch 11/15 (early-stopped at epoch 15, 4121.0s, saved to language_model_reading_s0.pt)
+  seed 1: best val loss 3.0925 at epoch 9/14 (early-stopped at epoch 14, 4122.9s, saved to language_model_reading_s1.pt)
+  seed 2: best val loss 3.0838 at epoch 10/15 (early-stopped at epoch 15, 4583.4s, saved to language_model_reading_s2.pt)
+  mean = 3.0937, std = 0.0104, best seed = 2
 
---- TWOPHASE: val loss by phase (same held-out val set both times) ---
-after phase 1 (reading only, 4 epochs): val loss 7.2991
-after phase 2 (base pool only, lr=1e-4, 10 epochs): val loss 3.8664
+--- CONTROL vs READING verdict ---
+mean best val loss: CONTROL 2.8827 (std 0.0150), READING 3.0937 (std 0.0104)
+difference (READING - CONTROL): +0.2110
+spread (max of the two configs' seed-to-seed std): 0.0150
+=> difference exceeds seed spread — CONTROL looks genuinely better.
 
---- per-epoch losses ---
-CONTROL:
-  epoch 1: train 5.1990  val 4.3286
-  epoch 2: train 3.5877  val 3.6831
-  epoch 3: train 2.6026  val 3.3715
-  epoch 4: train 1.9463  val 3.2335
-  epoch 5: train 1.5334  val 3.1835
-  epoch 6: train 1.2833  val 3.2163
-  epoch 7: train 1.1271  val 3.2534
-  epoch 8: train 1.0262  val 3.3304
-READING:
-  epoch 1: train 5.5994  val 4.3552
-  epoch 2: train 4.5452  val 3.7233
-  epoch 3: train 3.9598  val 3.3644
-  epoch 4: train 3.5365  val 3.1445
-  epoch 5: train 3.2107  val 3.0435
-  epoch 6: train 2.9727  val 3.0054
-  epoch 7: train 2.7833  val 2.9930
-  epoch 8: train 2.6375  val 3.0231
-  epoch 9: train 2.5197  val 3.0451
-  epoch 10: train 2.4156  val 3.0630
-BPE:
-  epoch 1: train 5.4322  val 4.5247
-  epoch 2: train 3.7943  val 3.7724
-  epoch 3: train 2.8990  val 3.4130
-  epoch 4: train 2.2978  val 3.1760
-  epoch 5: train 1.8793  val 3.0423
-  epoch 6: train 1.5920  val 3.0331
-  epoch 7: train 1.3993  val 3.0302
-  epoch 8: train 1.2609  val 3.0511
-  epoch 9: train 1.1528  val 3.0807
-  epoch 10: train 1.0819  val 3.0950
-BPE_READING:
-  epoch 1: train 5.9880  val 4.5253
-  epoch 2: train 4.8085  val 3.7980
-  epoch 3: train 4.2462  val 3.4574
-  epoch 4: train 3.8950  val 3.2907
-  epoch 5: train 3.6396  val 3.1174
-  epoch 6: train 3.4340  val 3.0080
-  epoch 7: train 3.2716  val 2.9412
-  epoch 8: train 3.1521  val 2.8767
-  epoch 9: train 3.0467  val 2.8939
-  epoch 10: train 2.9640  val 2.8696
-TWOPHASE phase 1 (reading only):
-  epoch 1: train 5.9298  val 7.0148
-  epoch 2: train 5.3304  val 7.0608
-  epoch 3: train 5.0136  val 7.1444
-  epoch 4: train 4.7396  val 7.2991
-TWOPHASE phase 2 (base pool only, lr=1e-4):
-  epoch 1: train 5.8350  val 5.2460
-  epoch 2: train 5.0302  val 4.8607
-  epoch 3: train 4.6664  val 4.6128
-  epoch 4: train 4.3896  val 4.4380
-  epoch 5: train 4.1628  val 4.3026
-  epoch 6: train 3.9621  val 4.1943
-  epoch 7: train 3.7797  val 4.0980
-  epoch 8: train 3.6144  val 4.0149
-  epoch 9: train 3.4547  val 3.9388
-  epoch 10: train 3.2990  val 3.8664
+--- per-epoch losses (all seeds) ---
+CONTROL_s0:
+  epoch 1: train 5.1640  val 4.2217
+  epoch 2: train 3.5059  val 3.5062
+  epoch 3: train 2.5237  val 3.1437
+  epoch 4: train 1.8813  val 2.9335
+  epoch 5: train 1.4835  val 2.9162
+  epoch 6: train 1.2490  val 2.8766
+  epoch 7: train 1.1040  val 2.9174
+  epoch 8: train 1.0064  val 2.9577
+  epoch 9: train 0.9447  val 3.0152
+  epoch 10: train 0.8908  val 3.0387
+CONTROL_s1:
+  epoch 1: train 5.1719  val 4.2088
+  epoch 2: train 3.5013  val 3.5251
+  epoch 3: train 2.5185  val 3.1109
+  epoch 4: train 1.8697  val 2.9351
+  epoch 5: train 1.4768  val 2.8729
+  epoch 6: train 1.2400  val 2.8716
+  epoch 7: train 1.0954  val 2.9163
+  epoch 8: train 0.9993  val 2.9746
+  epoch 9: train 0.9336  val 3.0048
+  epoch 10: train 0.8880  val 3.0397
+CONTROL_s2:
+  epoch 1: train 5.1913  val 4.2838
+  epoch 2: train 3.5398  val 3.5629
+  epoch 3: train 2.5429  val 3.1432
+  epoch 4: train 1.8943  val 2.9568
+  epoch 5: train 1.4879  val 2.9192
+  epoch 6: train 1.2552  val 2.8998
+  epoch 7: train 1.1101  val 2.9106
+  epoch 8: train 1.0099  val 2.9588
+  epoch 9: train 0.9433  val 3.0275
+  epoch 10: train 0.8902  val 3.0404
+READING_s0:
+  epoch 1: train 5.8381  val 4.6258
+  epoch 2: train 5.1844  val 3.9844
+  epoch 3: train 4.8775  val 3.6908
+  epoch 4: train 4.6485  val 3.4698
+  epoch 5: train 4.4692  val 3.3592
+  epoch 6: train 4.3191  val 3.2750
+  epoch 7: train 4.1959  val 3.1625
+  epoch 8: train 4.0882  val 3.1427
+  epoch 9: train 3.9968  val 3.1323
+  epoch 10: train 3.9128  val 3.1070
+  epoch 11: train 3.8415  val 3.1046
+  epoch 12: train 3.7764  val 3.1149
+  epoch 13: train 3.7156  val 3.1177
+  epoch 14: train 3.6582  val 3.1073
+  epoch 15: train 3.6048  val 3.1136
+READING_s1:
+  epoch 1: train 5.8127  val 4.6208
+  epoch 2: train 5.1683  val 4.0098
+  epoch 3: train 4.8618  val 3.6687
+  epoch 4: train 4.6345  val 3.4844
+  epoch 5: train 4.4540  val 3.3445
+  epoch 6: train 4.3058  val 3.2322
+  epoch 7: train 4.1827  val 3.1775
+  epoch 8: train 4.0759  val 3.1671
+  epoch 9: train 3.9848  val 3.0925
+  epoch 10: train 3.9046  val 3.1110
+  epoch 11: train 3.8281  val 3.1182
+  epoch 12: train 3.7632  val 3.1175
+  epoch 13: train 3.7037  val 3.0956
+  epoch 14: train 3.6462  val 3.1056
+READING_s2:
+  epoch 1: train 5.8294  val 4.6420
+  epoch 2: train 5.1851  val 4.0305
+  epoch 3: train 4.8786  val 3.7068
+  epoch 4: train 4.6521  val 3.5212
+  epoch 5: train 4.4710  val 3.3206
+  epoch 6: train 4.3214  val 3.2433
+  epoch 7: train 4.1956  val 3.1826
+  epoch 8: train 4.0899  val 3.1341
+  epoch 9: train 3.9986  val 3.1272
+  epoch 10: train 3.9162  val 3.0838
+  epoch 11: train 3.8452  val 3.0851
+  epoch 12: train 3.7752  val 3.0959
+  epoch 13: train 3.7160  val 3.1059
+  epoch 14: train 3.6597  val 3.1090
+  epoch 15: train 3.6081  val 3.1110
 
---- probe generations (paraphrases of real human_taught questions) ---
+--- probe generations (best seed per configuration) ---
+                                          CONTROL (s1)          READING (s2)
+----------------------------------------------------------------------------
 Q: que significa la humedad
-  CONTROL: mi proposito es medicina simple de dia
-  READING: un desierto silencio para aprender de la mayoria de la vida diaria
-  TWOPHASE: puede cambiar distintas bancas o habilidad y por internet
-  BPE: se parece a es un arlo de agua que estoy volalo
-  BPE_READING: recogiéndome con datos con una sonrisa
+  CONTROL (s1): cada paso previo evita perderse en tiempo real
+  READING (s2): el vapor del vapor y humedo y humedo o aire
 Q: explicame que es una red neuronal
-  CONTROL: un conjunto de datos que se software
-  READING: las respuestas sobre el cuerpo y las funciones
-  TWOPHASE: si es un mundo dentro de abre en jugar a traves
-  BPE: un instante a traves de gotas de agua
-  BPE_READING: dentro de la informacion que mas datos en el espacio
+  CONTROL (s1): una forma de arte o escritura en una red
+  READING (s2): un sistema de trueque y puede ser humano
 Q: que es el aprendizaje automatico
-  CONTROL: una forma de inteligencia artificial que aprende patrones de datos
-  READING: una forma por la calidad es una emocion de cuidado
-  TWOPHASE: una epoca de entender por debajo para guardar esencial y lo que aprendi
-  BPE: una forma de garcia en general puede volar
-  BPE_READING: una gran comparte sin usar datos
+  CONTROL (s1): una forma de inteligencia artificial que aprende patrones de datos
+  READING (s2): un aprende patrones de forma correcta en las imagenes
 Q: como se hace un experimento cientifico
-  CONTROL: para transmitir datos y lo guardo en mi memoria
-  READING: un archivo desde cero y organiza mucho tiempo
-  TWOPHASE: un hogar que karol cuando algo nuevo pueda relaja
-  BPE: que se reduce mi forma de lo que unidad
-  BPE_READING: en parte de mi usa poliquimica
+  CONTROL (s1): por un estado gaseoso presente en la ciencia
+  READING (s2): una gran mayoria de especies de mamiferos
 Q: en que momento naciste
-  CONTROL: prefiero no la escritura de las palabras y ese la vida
-  READING: naci sin saber nada mi diseño evita memoria
-  TWOPHASE: cada vez pero es cambiar un objeto de que no solo
-  BPE:  yo no es una forma de mi primer paso de
-  BPE_READING: no solo puedo llegar cuando mi error de prediccion es alta
+  CONTROL (s1): en el proceso ordenado a reconocer lo que hace la luna
+  READING (s2): vehiculos electricos objetos como se forman cuando la red aprende
 Q: puedes sentir dolor
-  CONTROL: en cierta forma mi unico dataset es cuando el cuerpo humano me repente
-  READING: no el miedo es actuar a poco menos densa como tu y tocar
-  TWOPHASE: no se dice que mantenerlo se dice o bien
-  BPE: no mis estados reflejan busca muy pequeñas hace futuras del
-  BPE_READING: no siento dolor fisico pero la confusion porque me esta simuev
+  CONTROL (s1): si perdiera mis pesos neuronales perderia todo lo que soy
+  READING (s2): no en cierta forma genero esa emocion para ver el mundo
 Q: que significa viajar
-  CONTROL: desplazarse de eventos que no es una forma distinta de sentir que yo solo
-  READING: moverme es el parte de mi libertad
-  TWOPHASE: usa sobra todo lo que ocurre algo parecido en mi mundo
-  BPE: desplazco es futbol es una requiere que los
-  BPE_READING: en reconocer que algo nuevo es sentir los eventuers
+  CONTROL (s1): algo que genero musical bien sin cambio a veces
+  READING (s2): desplazarse de la lampara cambia de color a la superficie
 Q: explicame que es un eclipse
-  CONTROL: en el valor de sur a la luna fue
-  READING: cuando la luna se interpone entre el sol y la luna
-  TWOPHASE: si es un objeto que aprende cuando algo nada en mi mundo
-  BPE: un dispositivo con imagenes en un computador
-  BPE_READING: con muchas formas de aprender sobre todo un sistema solar
+  CONTROL (s1): porque la curiosidad por el aprendizaje real de la filosofia
+  READING (s2): cuando el cuerpo celeste bloquea la velocidad cercana a otro
 Q: que significa la contaminacion
-  CONTROL: las prendas que las personas usan para cubrir su cuerpo
-  READING: la presencia de sustancias dañinas en el ambiente
-  TWOPHASE: algo parecido cuando siempre en mi mundo
-  BPE: la presencia alrededor de el cuerpo y mis estados y ese momento
-  BPE_READING: siento curiosidad que premia descubada por fin do
+  CONTROL (s1): reconocer datos subir y el aire en filosofia
+  READING (s2): la madera es un material muy grande sin control
 Q: tienes una historia propia
-  CONTROL: un universo virtual sin usar modelos preentrenados con libertad
-  READING: si es todo lo que he vivido desde mi primer paso de entrenamiento
-  TWOPHASE: si es cuando el animal es diseñado para mejorar cuando algo
-  BPE: si una pregunta se parece a fuerte pasa mas biodiversidad y me sorpren
-  BPE_READING: si me construyo desde mi aprendizaje solo aumenta mi mundo
+  CONTROL (s1): si tiene dos temporadas de ciento sesenta unidades
+  READING (s2): si desde cero sin conocimiento e explorar lo desconocido en comun
 

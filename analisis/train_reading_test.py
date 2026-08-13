@@ -1,80 +1,78 @@
 """Standalone script: test whether adding free Spanish reading text to
 training improves the native Transformer's generalization.
 
-Trains three models from random init, same architecture/hyperparameters/vocab
-cap as production (brain/language_model.py), on the SAME held-out validation
-set so val loss is directly comparable:
+Trains two configurations from random init, same architecture/hyperparameters
+as production (brain/language_model.py), on the SAME held-out validation set
+so val loss is directly comparable:
 
-  A) CONTROL — exactly the production training data (human_taught pairs +
-     episode thoughts + corpus_agente.txt), loaded the same way
-     brain/language_model.py's own main() does it.
-  B) READING — CONTROL's data plus datos_lectura/clean/*.txt, one sample per
-     cleaned line (this codebase already treats "one line = one training
-     sample" for corpus_agente.txt/episode thoughts, so reading text is held
-     to the same convention rather than attempting grammatical sentence
-     splitting on text that ingest.py has already stripped of
-     sentence-ending punctuation).
-  C) TWOPHASE — same combined data as READING, but split into two training
-     phases instead of one mixed pass: phase 1 trains ONLY on reading text
-     (from random init), then phase 2 continues from those weights training
-     ONLY on the base pool at a lower learning rate (1e-4 vs 1e-3), like a
-     pretrain-then-fine-tune schedule. Its vocabulary is built once, up
-     front, with every current-production vocab word guaranteed a slot
-     before any reading word fills the rest of the budget — unlike READING,
-     where pure frequency ranking bumped ~15% of production words out
-     (see language_model_reading.pt's run: 4343/5136 survived).
-  D) BPE — CONTROL's exact data (base pool only, no reading text — this
-     isolates the tokenizer change from the reading-text change) and exact
-     hyperparameters/epochs, but tokenizer_type="bpe" instead of the
-     word-level AgentTokenizer: brain/language_model.py loads
-     datos_lectura/tokenizer.json (lectura.bpe) and encodes/decodes through
-     it. Its val loss is NOT comparable to the other runs' — BPE tokens are
-     sub-word pieces, not whole words, so cross-entropy is over a different
-     vocabulary and different-length sequences per sample. The comparison
-     that matters for this run is the probe generations, not the loss
-     number (see the CAVEAT line in the written report).
-  E) BPE_READING — BPE's tokenizer_type="bpe", but CONTROL's base pool PLUS
-     the cleaned reading text (same combined data as READING). Isolates
-     "does reading text help" for the BPE path the way READING does for the
-     word path.
+  CONTROL — exactly the production training data (human_taught pairs +
+    episode thoughts + corpus_agente.txt), loaded the same way
+    brain/language_model.py's own main() does it.
+  READING — CONTROL's data plus datos_lectura/clean/*.txt, one sample per
+    cleaned line (this codebase already treats "one line = one training
+    sample" for corpus_agente.txt/episode thoughts, so reading text is held
+    to the same convention rather than attempting grammatical sentence
+    splitting on text that ingest.py has already stripped of
+    sentence-ending punctuation).
 
-brain/language_model.py now skips normalize_text() entirely when
-tokenizer_type == "bpe" (lowercasing/accent-stripping text the BPE
-tokenizer was trained to preserve made no sense — see its own change
-report). That means the base pool exists in TWO representations here: raw
-(unnormalized, for D/E) and normalized (for A/B/C) — but they must still
-share the exact same 730-row validation SPLIT, or "same held-out val set"
-stops being true. _load_training_samples() also trims episode thoughts with
-an unseeded random.sample() and reshuffles with the unseeded global random
-module, so calling it twice independently (once per representation) would
-silently hand word-mode and bpe-mode runs two different validation splits
-even from identical DB content. So the loader runs exactly ONCE here, always
-with tokenizer_type="bpe" (raw text, losslessly forward-transformable), and
-the split happens once on that raw pool; the normalized pool used by
-A/B/C is then derived by applying normalize_text() to each already-split
-raw sample — same rows, same split, just re-cased. Reading samples get the
-same raw-then-derived-normalized treatment. Reading text is only ever
-appended to train sides, never val, so val is the same underlying rows in
-every run, always.
+Dropped: the TWOPHASE, BPE and BPE_READING configurations this script used
+to also run. Their results were settled (see reading_test_results.txt run
+history) — TWOPHASE needed a hand-built priority tokenizer just to reach
+100% production-vocab survival, and BPE/BPE_READING's val loss was never
+comparable to the word-level runs' in the first place (different vocabulary,
+different-length sequences per sample). Keeping them here would only add
+dead weight to a script now focused on a single question: does reading text
+help, and is the effect bigger than seed noise.
+
+Each configuration is trained with 3 random seeds (SEEDS below) so a
+CONTROL-vs-READING difference can be judged against the spread the SAME
+configuration produces just from weight init / shuffling order — see
+write_results()'s verdict line, which only calls a difference real if it
+exceeds the larger of the two configs' seed-to-seed standard deviations.
+
+CONTROL trains for 10 epochs; READING trains for up to 30 — CONTROL already
+overfits by epoch 5 on its own (small) pool, so more epochs would only push
+it further into memorization, while READING's much larger combined pool may
+need the extra budget to actually converge. Both configs share the same
+early-stopping rule (5 consecutive epochs without a >EARLY_STOP_MIN_DELTA
+improvement in val loss — see EARLY_STOP_PATIENCE, deliberately looser than
+brain/language_model.py's own production default of 3, since this script
+wants to see whether READING keeps improving past where production would
+have already cut it off) and report.txt records the epoch each run's best
+val loss actually occurred at, so a run that used its full epoch budget
+without early-stopping (best epoch == last epoch) is visibly distinguishable
+from one that converged and plateaued.
+
+READING's tokenizer guarantees a slot for every one of the current
+production vocabulary's 5136 words before any reading-corpus word fills the
+remaining budget (build_priority_tokenizer) — pure frequency ranking cannot
+promise that (see git history: an earlier run of this script lost ~15% of
+production vocab that way), and losing production words mid-experiment would
+confound "did reading text help" with "did we also cripple the model's
+existing vocabulary". CONTROL keeps plain frequency-ranked AgentTokenizer
+since its pool already IS the production pool.
+
+The validation split is loaded and split exactly ONCE, before any per-seed
+work starts, and reused by all 6 runs — see load_base_split()'s docstring
+for why re-loading would silently break "same held-out set".
 
 Every method actually used (_load_training_samples, _split_train_val,
 _oversample_pairs, _collect_vocabulary, _run_epoch, generate_reply, save,
 load_model) is LanguageModelTrainer's own — none of it is reimplemented, and
-brain/language_model.py is never modified. The one genuinely new piece of
-logic is build_priority_tokenizer() for run C's vocabulary (AgentTokenizer
-itself only supports pure-frequency ranking, which is exactly what run C
-needs to NOT do — see its docstring).
+brain/language_model.py is never modified. build_priority_tokenizer is the
+one genuinely new piece of logic (AgentTokenizer itself only supports pure-
+frequency ranking).
 
-Writes language_model_control.pt, language_model_reading.pt,
-language_model_twophase.pt, language_model_bpe.pt, and
-language_model_bpe_reading.pt (never language_model.pt or agent_state.pt)
-plus a side-by-side summary at analisis/reading_test_results.txt.
+Writes language_model_control_s{seed}.pt and language_model_reading_s{seed}.pt
+for each seed in SEEDS (never language_model.pt or agent_state.pt), plus a
+summary at analisis/reading_test_results.txt.
 
 Usage:
     python analisis/train_reading_test.py
 """
 
 import random
+import statistics
 import sys
 import time
 from collections import Counter
@@ -91,35 +89,37 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 MEMORY_PATH = PROJECT_ROOT / "episodic_memory.sqlite3"
 CLEAN_DIR = PROJECT_ROOT / "datos_lectura" / "clean"
 PRODUCTION_CHECKPOINT = PROJECT_ROOT / "language_model.pt"
-CONTROL_OUTPUT = PROJECT_ROOT / "language_model_control.pt"
-READING_OUTPUT = PROJECT_ROOT / "language_model_reading.pt"
-TWOPHASE_OUTPUT = PROJECT_ROOT / "language_model_twophase.pt"
-BPE_OUTPUT = PROJECT_ROOT / "language_model_bpe.pt"
-BPE_READING_OUTPUT = PROJECT_ROOT / "language_model_bpe_reading.pt"
-BPE_VAL_LOSS_CAVEAT = (
-    "CAVEAT: BPE/BPE_READING's val loss is NOT directly comparable to "
-    "CONTROL/READING/TWOPHASE's. BPE tokens are sub-word pieces, not whole words, so "
-    "cross-entropy is computed over a different vocabulary and different-length token "
-    "sequences per sample than the word-level runs. The comparison that matters here is "
-    "the probe generations below, not the loss numbers in the table above."
-)
 RESULTS_PATH = Path(__file__).resolve().parent / "reading_test_results.txt"
 
-# Same architecture/hyperparameters/vocab cap production training uses
-# (brain/language_model.py's own LanguageModelTrainer defaults / main() CLI
-# defaults) — nothing here changes the model.
-MAX_VOCAB_SIZE = 8192
+# Same architecture/hyperparameters production training uses (brain/
+# language_model.py's own LanguageModelTrainer defaults / main() CLI
+# defaults) — nothing here changes the model. max_vocab_size is raised from
+# production's 8192 to 16384 so the combined base-pool + reading-text
+# vocabulary isn't silently truncated the way READING's single-seed run was
+# before (see how "production vocab survived" is reported below).
+MAX_VOCAB_SIZE = 16384
 EMBEDDING_DIM = 128
 NHEAD = 4
 NUM_LAYERS = 3
 DIM_FEEDFORWARD = 256
 DROPOUT = 0.1
 LEARNING_RATE = 1e-3
-PHASE2_LEARNING_RATE = 1e-4
 DEVICE = "cpu"  # CPU only on this machine, per CLAUDE.md
-EPOCHS = 10
 BATCH_SIZE = 16
 GENERATION_TEMPERATURE = 0.8
+
+# CONTROL already overfits by epoch 5 on its small pool (more epochs would
+# only deepen memorization); READING's much larger combined pool gets a
+# bigger budget to actually converge. Early stopping (below) can still cut
+# either short of its cap.
+EPOCHS_BY_CONFIG = {"CONTROL": 10, "READING": 30}
+# Looser than brain/language_model.py's own EARLY_STOP_PATIENCE=3 — this
+# script wants to see whether READING keeps improving past where production
+# would already have cut it off. MIN_DELTA is reused as-is from production.
+EARLY_STOP_PATIENCE = 5
+
+CONFIG_LABELS = ("CONTROL", "READING")
+SEEDS = (0, 1, 2)
 
 # Fixed probes: exact-topic paraphrases of real human_taught questions,
 # worded differently from the corpus (verified in episodic_memory.sqlite3).
@@ -137,14 +137,37 @@ PROBE_QUESTIONS = [
 ]
 
 
-def build_reading_samples(normalize: bool) -> tuple[list[str], list[Path]]:
-    """normalize=False (raw, matches lectura/bpe.py's own training text) for
-    BPE-mode runs; normalize=True (lowercase + strip accents, matching the
-    word tokenizer's own vocabulary) for word-mode runs. Deduping happens
-    after the normalize/no-op choice, on whichever representation is being
-    built, so each variant's sample count matches what that mode would
-    naturally produce on its own.
-    """
+def set_seed(seed: int) -> None:
+    """Seeds every source of randomness a run consumes AFTER this point:
+    weight init (torch, inside AgentLanguageModel()), _oversample_pairs'
+    shuffle, and each epoch's random.shuffle(train_samples) in run_training.
+    Must be called fresh before each (config, seed) run, and never before
+    load_base_split() — the val split must stay seed-independent."""
+    random.seed(seed)
+    torch.manual_seed(seed)
+
+
+def output_path_for(label: str, seed: int) -> Path:
+    return PROJECT_ROOT / f"language_model_{label.lower()}_s{seed}.pt"
+
+
+def best_val_loss_and_epoch(val_losses: list[float | None]) -> tuple[float | None, int | None]:
+    """1-indexed epoch (matching the "epoch N/<epochs>" prints) at which the
+    lowest val loss occurred — this is the literal minimum, independent of
+    the EARLY_STOP_MIN_DELTA threshold run_training uses to decide when to
+    STOP, so it answers "when was the best point" exactly rather than "when
+    did the early-stop bookkeeping last reset"."""
+    values = [(i + 1, v) for i, v in enumerate(val_losses) if v is not None]
+    if not values:
+        return None, None
+    epoch, val = min(values, key=lambda iv: iv[1])
+    return val, epoch
+
+
+def build_reading_samples() -> tuple[list[str], list[Path]]:
+    """One sample per cleaned line, normalized the same way the word
+    tokenizer's own vocabulary is (normalize_text — lowercase + strip
+    accents), then deduped."""
     if not CLEAN_DIR.is_dir():
         raise FileNotFoundError(
             f"{CLEAN_DIR} not found — run `python -m lectura.ingest` first."
@@ -158,120 +181,40 @@ def build_reading_samples(normalize: bool) -> tuple[list[str], list[Path]]:
         for line in path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if line:
-                text = normalize_text(line) if normalize else line
-                samples.append(f"{AgentTokenizer.A} {text} {AgentTokenizer.END}")
+                samples.append(f"{AgentTokenizer.A} {normalize_text(line)} {AgentTokenizer.END}")
     return list(dict.fromkeys(samples)), clean_files
 
 
-def load_base_split() -> tuple[LanguageModelTrainer, dict[str, list[str]], dict[str, list[str]]]:
-    """Loads the base pool ONCE, always with tokenizer_type="bpe" so the text
-    stays raw/unnormalized (see FIX 1 in brain/language_model.py), and splits
-    it ONCE. That split is the single shared source of truth every run in
-    this script reuses:
-      - "raw" (unnormalized) feeds BPE-mode runs (D, E) directly.
-      - "normalized" is derived by applying normalize_text() to each already-
-        split raw sample — same rows, same train/val membership, just
-        re-cased — and feeds word-mode runs (A, B, C).
-    _load_training_samples() trims episode thoughts with an unseeded
-    random.sample() and reshuffles with the unseeded global random module, so
-    calling it a second time (even with identical DB content) could hand the
-    two representations different validation splits. Deriving instead of
-    re-loading guarantees "same held-out val set" is actually true.
+def load_base_split() -> tuple[LanguageModelTrainer, list[str], list[str], list[str]]:
+    """Loads the base pool ONCE with tokenizer_type="word" (so
+    _load_training_samples applies normalize_text() itself — see its own
+    text_filter logic) and splits it ONCE via _split_train_val. That split is
+    the single shared source of truth every run in this script reuses — both
+    configs, all 3 seeds each — so "same held-out validation set across all
+    6 runs" is actually true.
+
+    This must run before any per-run seeding: _split_train_val's Fisher-Yates
+    shuffle depends on the incoming list's order, which _load_training_samples
+    produces via the (unseeded, global) `random` module. Calling either of
+    them again after set_seed() has run would silently change which rows
+    land in train vs val.
 
     scratch itself is a real LanguageModelTrainer instance (via __new__,
     __init__ skipped) used purely to call its own bound methods — safe since
     _load_training_samples/_split_train_val/_oversample_pairs/
-    _collect_vocabulary only ever touch self.memory_path and (now)
+    _collect_vocabulary only ever touch self.memory_path and
     self.tokenizer_type, both set below.
     """
     scratch = LanguageModelTrainer.__new__(LanguageModelTrainer)
-    scratch.tokenizer_type = "bpe"
+    scratch.tokenizer_type = "word"
     scratch.memory_path = MEMORY_PATH
 
-    base_samples_raw = scratch._load_training_samples()
-    if not base_samples_raw:
+    base_samples = scratch._load_training_samples()
+    if not base_samples:
         raise ValueError(f"No training samples found via {MEMORY_PATH}")
 
-    pre_oversample_train_raw, val_samples_raw = scratch._split_train_val(base_samples_raw)
-
-    raw = {
-        "base_samples": base_samples_raw,
-        "pre_oversample_train": pre_oversample_train_raw,
-        "val_samples": val_samples_raw,
-    }
-    normalized = {key: [normalize_text(sample) for sample in samples] for key, samples in raw.items()}
-    return scratch, raw, normalized
-
-
-def build_trainer(
-    scratch: LanguageModelTrainer,
-    pool_samples: list[str],
-    pre_oversample_train: list[str],
-    val_samples: list[str],
-) -> LanguageModelTrainer:
-    train_samples = scratch._oversample_pairs(pre_oversample_train)
-    vocabulary_words = scratch._collect_vocabulary(pool_samples)
-    tokenizer = AgentTokenizer(vocabulary_words, max_vocab_size=MAX_VOCAB_SIZE)
-
-    trainer = LanguageModelTrainer.__new__(LanguageModelTrainer)
-    trainer.tokenizer_type = "word"  # required by save() — see build_bpe_trainer for the bpe counterpart
-    trainer.memory_path = MEMORY_PATH
-    trainer.device = torch.device(DEVICE)
-    trainer.samples = pool_samples
-    trainer.train_samples = train_samples
-    trainer.val_samples = list(val_samples)
-    trainer.tokenizer = tokenizer
-    trainer.model = AgentLanguageModel(
-        vocab_size=tokenizer.vocab_size,
-        embedding_dim=EMBEDDING_DIM,
-        nhead=NHEAD,
-        num_layers=NUM_LAYERS,
-        dim_feedforward=DIM_FEEDFORWARD,
-        dropout=DROPOUT,
-        pad_index=tokenizer.pad_index,
-        tokenizer=tokenizer,
-    ).to(trainer.device)
-    trainer.optimizer = torch.optim.Adam(trainer.model.parameters(), lr=LEARNING_RATE)
-    trainer.loss_fn = nn.CrossEntropyLoss(ignore_index=tokenizer.pad_index)
-    return trainer
-
-
-def build_bpe_trainer(
-    scratch: LanguageModelTrainer,
-    base_samples: list[str],
-    pre_oversample_train: list[str],
-    val_samples: list[str],
-) -> LanguageModelTrainer:
-    """Run D: CONTROL's exact base-pool data (no reading text), but tokenized
-    through datos_lectura/tokenizer.json instead of AgentTokenizer. Reuses
-    LanguageModelTrainer._load_bpe_tokenizer — the same method
-    brain/language_model.py's own __init__/load_model use for tokenizer_type
-    "bpe" — so this is exactly what production BPE training would load.
-    """
-    train_samples = scratch._oversample_pairs(pre_oversample_train)
-    tokenizer = LanguageModelTrainer._load_bpe_tokenizer()
-
-    trainer = LanguageModelTrainer.__new__(LanguageModelTrainer)
-    trainer.tokenizer_type = "bpe"
-    trainer.memory_path = MEMORY_PATH
-    trainer.device = torch.device(DEVICE)
-    trainer.samples = base_samples
-    trainer.train_samples = train_samples
-    trainer.val_samples = list(val_samples)
-    trainer.tokenizer = tokenizer
-    trainer.model = AgentLanguageModel(
-        vocab_size=tokenizer.vocab_size,
-        embedding_dim=EMBEDDING_DIM,
-        nhead=NHEAD,
-        num_layers=NUM_LAYERS,
-        dim_feedforward=DIM_FEEDFORWARD,
-        dropout=DROPOUT,
-        pad_index=tokenizer.pad_index,
-        tokenizer=tokenizer,
-    ).to(trainer.device)
-    trainer.optimizer = torch.optim.Adam(trainer.model.parameters(), lr=LEARNING_RATE)
-    trainer.loss_fn = nn.CrossEntropyLoss(ignore_index=tokenizer.pad_index)
-    return trainer
+    pre_oversample_train, val_samples = scratch._split_train_val(base_samples)
+    return scratch, base_samples, pre_oversample_train, val_samples
 
 
 def build_priority_tokenizer(
@@ -279,10 +222,13 @@ def build_priority_tokenizer(
 ) -> AgentTokenizer:
     """Same vocab format AgentTokenizer.__init__ builds, but two-tier ranked
     instead of pure-frequency ranked: every word in `priority_words` is
-    guaranteed a slot first (production-vocab survival must be 100% for run
-    C, which pure frequency ranking cannot promise — see run B, where it
-    only hit 84.6%), then the remaining budget is filled with the most
-    frequent words from `vocabulary_words` that aren't already in.
+    guaranteed a slot first (production-vocab survival must be 100% for
+    READING — pure frequency ranking cannot promise that, see the module
+    docstring), then the remaining budget is filled with the most frequent
+    words from `vocabulary_words` that aren't already in. `vocabulary_words`
+    is READING's own combined pool (base pool + reading text), so in
+    practice the filler ends up almost entirely reading-corpus words, since
+    production vocab already covers the base pool's frequent words.
 
     AgentTokenizer.__init__ has no hook for custom ranking, so the handful of
     attribute-assignment lines below (words/word_to_index/index_to_word/the
@@ -330,86 +276,32 @@ def build_priority_tokenizer(
     return tokenizer
 
 
-def run_training(trainer: LanguageModelTrainer, label: str) -> tuple[list[float], list[float | None]]:
-    # Mirrors LanguageModelTrainer.train() exactly (same _run_epoch calls,
-    # same early-stop constants) but also keeps the per-epoch val losses so
-    # they can go in the results file, not just stdout.
-    train_losses: list[float] = []
-    val_losses: list[float | None] = []
-    best_val_loss = float("inf")
-    stale_epochs = 0
-
-    for epoch in range(EPOCHS):
-        random.shuffle(trainer.train_samples)
-        train_loss = trainer._run_epoch(trainer.train_samples, BATCH_SIZE, train=True)
-        train_losses.append(train_loss)
-
-        if trainer.val_samples:
-            val_loss = trainer._run_epoch(trainer.val_samples, BATCH_SIZE, train=False)
-            val_losses.append(val_loss)
-            print(
-                f"[{label}] epoch {epoch + 1}/{EPOCHS} — "
-                f"train loss {train_loss:.4f}, val loss {val_loss:.4f}"
-            )
-            if best_val_loss - val_loss > LanguageModelTrainer.EARLY_STOP_MIN_DELTA:
-                best_val_loss = val_loss
-                stale_epochs = 0
-            else:
-                stale_epochs += 1
-                if stale_epochs >= LanguageModelTrainer.EARLY_STOP_PATIENCE:
-                    print(f"[{label}] early stopping at epoch {epoch + 1}/{EPOCHS}")
-                    break
-        else:
-            val_losses.append(None)
-            print(f"[{label}] epoch {epoch + 1}/{EPOCHS} — train loss {train_loss:.4f} (no val split)")
-
-    trainer.model.train()
-    return train_losses, val_losses
+def build_tokenizer_for_config(
+    label: str, pool_samples: list[str], vocabulary_words: list[str], production_vocab_words: list[str]
+) -> AgentTokenizer:
+    if label == "READING":
+        return build_priority_tokenizer(vocabulary_words, production_vocab_words, MAX_VOCAB_SIZE)
+    return AgentTokenizer(vocabulary_words, max_vocab_size=MAX_VOCAB_SIZE)
 
 
-def generate_probes(trainer: LanguageModelTrainer) -> dict[str, str]:
-    # generate_reply() returns list[str] for the word tokenizer, str for BPE
-    # (brain/language_model.py's generate_reply docstring) — join only applies
-    # to the former; naively " ".join()-ing a BPE string would space out its
-    # individual characters instead.
-    replies = {}
-    for question in PROBE_QUESTIONS:
-        reply = trainer.model.generate_reply(question, temperature=GENERATION_TEMPERATURE)
-        if isinstance(reply, str):
-            text = reply
-        else:
-            text = " ".join(reply) if reply else ""
-        replies[question] = text if text else "(empty)"
-    return replies
-
-
-def train_two_phase(
+def build_trainer(
     scratch: LanguageModelTrainer,
-    base_samples: list[str],
+    pool_samples: list[str],
     pre_oversample_train: list[str],
     val_samples: list[str],
-    reading_samples: list[str],
-    production_vocab_words: list[str],
-) -> dict:
-    combined_pool = base_samples + reading_samples
-    vocabulary_words = scratch._collect_vocabulary(combined_pool)
-    tokenizer = build_priority_tokenizer(vocabulary_words, production_vocab_words, MAX_VOCAB_SIZE)
+    tokenizer: AgentTokenizer,
+) -> LanguageModelTrainer:
+    train_samples = scratch._oversample_pairs(pre_oversample_train)
 
-    survived_content = len(set(production_vocab_words) & set(tokenizer.words))
-    if survived_content != len(set(production_vocab_words)):
-        raise RuntimeError(
-            f"build_priority_tokenizer failed to guarantee 100% production vocab "
-            f"survival: {survived_content}/{len(set(production_vocab_words))}"
-        )
-    # Specials (PAD/UNK/Q/A/END) are always present in every AgentTokenizer by
-    # construction, so they trivially survive too — add them back in for a
-    # count that's directly comparable to CONTROL/READING's "survived" row,
-    # which counts against the full production vocab (specials included).
-    survived = survived_content + len(AgentTokenizer.SPECIAL_TOKENS)
-    print(f"[TWOPHASE] vocab size {tokenizer.vocab_size}, production vocab survived {survived}/{survived}")
-
-    device = torch.device(DEVICE)
-    model = AgentLanguageModel(
+    trainer = LanguageModelTrainer.__new__(LanguageModelTrainer)
+    trainer.tokenizer_type = "word"  # required by save()
+    trainer.memory_path = MEMORY_PATH
+    trainer.device = torch.device(DEVICE)
+    trainer.samples = pool_samples
+    trainer.train_samples = train_samples
+    trainer.val_samples = list(val_samples)
+    trainer.tokenizer = tokenizer
+    trainer.model = AgentLanguageModel(
         vocab_size=tokenizer.vocab_size,
         embedding_dim=EMBEDDING_DIM,
         nhead=NHEAD,
@@ -418,56 +310,63 @@ def train_two_phase(
         dropout=DROPOUT,
         pad_index=tokenizer.pad_index,
         tokenizer=tokenizer,
-    ).to(device)
-
-    trainer = LanguageModelTrainer.__new__(LanguageModelTrainer)
-    trainer.tokenizer_type = "word"  # required by save()
-    trainer.memory_path = MEMORY_PATH
-    trainer.device = device
-    trainer.tokenizer = tokenizer
-    trainer.model = model
+    ).to(trainer.device)
+    trainer.optimizer = torch.optim.Adam(trainer.model.parameters(), lr=LEARNING_RATE)
     trainer.loss_fn = nn.CrossEntropyLoss(ignore_index=tokenizer.pad_index)
-    trainer.val_samples = list(val_samples)
+    return trainer
 
-    start = time.monotonic()
 
-    print("\n=== training TWOPHASE (phase 1: reading text only, lr=1e-3) ===")
-    trainer.samples = reading_samples
-    trainer.train_samples = list(reading_samples)
-    trainer.optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
-    phase1_train_losses, phase1_val_losses = run_training(trainer, "TWOPHASE-P1")
+def run_training(
+    trainer: LanguageModelTrainer, label: str, epochs: int
+) -> tuple[list[float], list[float | None]]:
+    # Mirrors LanguageModelTrainer.train() (same _run_epoch calls, same
+    # EARLY_STOP_MIN_DELTA), but with this script's own epoch budget and
+    # EARLY_STOP_PATIENCE (5, looser than production's 3 — see module
+    # docstring), and keeps the per-epoch val losses so they can go in the
+    # results file, not just stdout.
+    train_losses: list[float] = []
+    val_losses: list[float | None] = []
+    best_loss = float("inf")
+    stale_epochs = 0
 
-    print("\n=== training TWOPHASE (phase 2: base pool only, lr=1e-4, continuing phase 1 weights) ===")
-    trainer.samples = base_samples
-    trainer.train_samples = scratch._oversample_pairs(pre_oversample_train)
-    trainer.optimizer = torch.optim.Adam(model.parameters(), lr=PHASE2_LEARNING_RATE)
-    phase2_train_losses, phase2_val_losses = run_training(trainer, "TWOPHASE-P2")
+    for epoch in range(epochs):
+        random.shuffle(trainer.train_samples)
+        train_loss = trainer._run_epoch(trainer.train_samples, BATCH_SIZE, train=True)
+        train_losses.append(train_loss)
 
-    elapsed = time.monotonic() - start
-    print(f"[TWOPHASE] training finished in {elapsed:.1f}s")
+        if trainer.val_samples:
+            val_loss = trainer._run_epoch(trainer.val_samples, BATCH_SIZE, train=False)
+            val_losses.append(val_loss)
+            print(
+                f"[{label}] epoch {epoch + 1}/{epochs} — "
+                f"train loss {train_loss:.4f}, val loss {val_loss:.4f}"
+            )
+            if best_loss - val_loss > LanguageModelTrainer.EARLY_STOP_MIN_DELTA:
+                best_loss = val_loss
+                stale_epochs = 0
+            else:
+                stale_epochs += 1
+                if stale_epochs >= EARLY_STOP_PATIENCE:
+                    print(
+                        f"[{label}] early stopping at epoch {epoch + 1}/{epochs} "
+                        f"(no improvement for {EARLY_STOP_PATIENCE} consecutive epochs)"
+                    )
+                    break
+        else:
+            val_losses.append(None)
+            print(f"[{label}] epoch {epoch + 1}/{epochs} — train loss {train_loss:.4f} (no val split)")
 
-    trainer.save(TWOPHASE_OUTPUT)
-    print(f"[TWOPHASE] weights saved to {TWOPHASE_OUTPUT}")
+    trainer.model.train()
+    return train_losses, val_losses
 
-    probes = generate_probes(trainer)
 
-    return {
-        "trainer": trainer,
-        # Aliased to phase 2 (the final trained state) so the shared
-        # CONTROL/READING/TWOPHASE summary table below can treat all three
-        # runs uniformly; phase1_*/phase2_* stay available for the dedicated
-        # per-phase rows.
-        "train_losses": phase2_train_losses,
-        "val_losses": phase2_val_losses,
-        "phase1_train_losses": phase1_train_losses,
-        "phase1_val_losses": phase1_val_losses,
-        "phase2_train_losses": phase2_train_losses,
-        "phase2_val_losses": phase2_val_losses,
-        "vocab_size": tokenizer.vocab_size,
-        "survived": survived,
-        "probes": probes,
-        "elapsed": elapsed,
-    }
+def generate_probes(trainer: LanguageModelTrainer) -> dict[str, str]:
+    replies = {}
+    for question in PROBE_QUESTIONS:
+        reply = trainer.model.generate_reply(question, temperature=GENERATION_TEMPERATURE)
+        text = " ".join(reply) if reply else ""
+        replies[question] = text if text else "(empty)"
+    return replies
 
 
 def main() -> None:
@@ -478,97 +377,82 @@ def main() -> None:
     production_vocab = set(prod_tokenizer.words)
 
     print(f"[reading_test] loading base training pool from {MEMORY_PATH} (one read, shared by every run)")
-    scratch, raw, normalized = load_base_split()
-    base_samples, pre_oversample_train, val_samples = (
-        normalized["base_samples"], normalized["pre_oversample_train"], normalized["val_samples"]
-    )
-    base_samples_raw, pre_oversample_train_raw, val_samples_raw = (
-        raw["base_samples"], raw["pre_oversample_train"], raw["val_samples"]
-    )
+    scratch, base_samples, pre_oversample_train, val_samples = load_base_split()
     print(
         f"[reading_test] base pool: {len(base_samples)} samples, "
-        f"{len(pre_oversample_train)} train (pre-oversample) / {len(val_samples)} val "
-        f"(same split, raw+normalized representations)"
+        f"{len(pre_oversample_train)} train (pre-oversample) / {len(val_samples)} val"
     )
 
-    reading_samples, clean_files = build_reading_samples(normalize=True)
-    reading_samples_raw, _ = build_reading_samples(normalize=False)
+    reading_samples, clean_files = build_reading_samples()
     print(
-        f"[reading_test] {len(reading_samples)} reading samples (normalized) / "
-        f"{len(reading_samples_raw)} (raw) from {len(clean_files)} file(s) under {CLEAN_DIR}"
+        f"[reading_test] {len(reading_samples)} reading samples from "
+        f"{len(clean_files)} file(s) under {CLEAN_DIR}"
     )
-
-    runs = {}
-    for label, pool_samples, train_pre_oversample, output_path in (
-        ("CONTROL", base_samples, pre_oversample_train, CONTROL_OUTPUT),
-        ("READING", base_samples + reading_samples, pre_oversample_train + reading_samples, READING_OUTPUT),
-    ):
-        print(f"\n=== training {label} ===")
-        start = time.monotonic()
-        trainer = build_trainer(scratch, pool_samples, train_pre_oversample, val_samples)
-        print(
-            f"[{label}] vocab size {trainer.tokenizer.vocab_size}, "
-            f"{len(trainer.train_samples)} train samples, {len(trainer.val_samples)} val samples"
-        )
-        train_losses, val_losses = run_training(trainer, label)
-        elapsed = time.monotonic() - start
-        print(f"[{label}] training finished in {elapsed:.1f}s")
-
-        trainer.save(output_path)
-        print(f"[{label}] weights saved to {output_path}")
-
-        survived = len(production_vocab & set(trainer.tokenizer.words))
-        probes = generate_probes(trainer)
-
-        runs[label] = {
-            "trainer": trainer,
-            "train_losses": train_losses,
-            "val_losses": val_losses,
-            "vocab_size": trainer.tokenizer.vocab_size,
-            "survived": survived,
-            "probes": probes,
-            "elapsed": elapsed,
-        }
 
     production_vocab_words = [w for w in prod_tokenizer.words if w not in AgentTokenizer.SPECIAL_TOKENS]
-    runs["TWOPHASE"] = train_two_phase(
-        scratch, base_samples, pre_oversample_train, val_samples, reading_samples, production_vocab_words
-    )
 
-    for label, pool_samples_raw, train_pre_oversample_raw, output_path in (
-        ("BPE", base_samples_raw, pre_oversample_train_raw, BPE_OUTPUT),
-        (
-            "BPE_READING",
-            base_samples_raw + reading_samples_raw,
-            pre_oversample_train_raw + reading_samples_raw,
-            BPE_READING_OUTPUT,
-        ),
-    ):
-        print(f"\n=== training {label} ===")
-        start = time.monotonic()
-        bpe_trainer = build_bpe_trainer(scratch, pool_samples_raw, train_pre_oversample_raw, val_samples_raw)
+    configs = {
+        "CONTROL": (base_samples, pre_oversample_train),
+        "READING": (base_samples + reading_samples, pre_oversample_train + reading_samples),
+    }
+
+    runs = {}
+    for label in CONFIG_LABELS:
+        pool_samples, train_pre_oversample = configs[label]
+        epochs = EPOCHS_BY_CONFIG[label]
+
+        # Vocab is deterministic (frequency/priority ranking, no randomness)
+        # and depends only on pool_samples, so it's built once per config and
+        # shared by all 3 seeds — not rebuilt per seed.
+        vocabulary_words = scratch._collect_vocabulary(pool_samples)
+        tokenizer = build_tokenizer_for_config(label, pool_samples, vocabulary_words, production_vocab_words)
+        vocab_survived = len(production_vocab & set(tokenizer.words))
+        if label == "READING" and vocab_survived != len(production_vocab):
+            raise RuntimeError(
+                f"READING tokenizer failed to guarantee full production-vocab survival: "
+                f"{vocab_survived}/{len(production_vocab)}"
+            )
         print(
-            f"[{label}] vocab size {bpe_trainer.tokenizer.vocab_size} (datos_lectura/tokenizer.json), "
-            f"{len(bpe_trainer.train_samples)} train samples, {len(bpe_trainer.val_samples)} val samples"
+            f"[{label}] vocab size {tokenizer.vocab_size}, "
+            f"production vocab survived {vocab_survived}/{len(production_vocab)}, "
+            f"epoch budget {epochs}"
         )
-        bpe_train_losses, bpe_val_losses = run_training(bpe_trainer, label)
-        bpe_elapsed = time.monotonic() - start
-        print(f"[{label}] training finished in {bpe_elapsed:.1f}s")
 
-        bpe_trainer.save(output_path)
-        print(f"[{label}] weights saved to {output_path}")
+        for seed in SEEDS:
+            run_label = f"{label}_s{seed}"
+            print(f"\n=== training {run_label} (seed={seed}) ===")
+            set_seed(seed)
+            start = time.monotonic()
+            trainer = build_trainer(scratch, pool_samples, train_pre_oversample, val_samples, tokenizer)
+            print(
+                f"[{run_label}] {len(trainer.train_samples)} train samples, "
+                f"{len(trainer.val_samples)} val samples"
+            )
+            train_losses, val_losses = run_training(trainer, run_label, epochs)
+            elapsed = time.monotonic() - start
+            print(f"[{run_label}] training finished in {elapsed:.1f}s")
 
-        bpe_probes = generate_probes(bpe_trainer)
+            output_path = output_path_for(label, seed)
+            trainer.save(output_path)
+            print(f"[{run_label}] weights saved to {output_path}")
 
-        runs[label] = {
-            "trainer": bpe_trainer,
-            "train_losses": bpe_train_losses,
-            "val_losses": bpe_val_losses,
-            "vocab_size": bpe_trainer.tokenizer.vocab_size,
-            "survived": None,  # not a word vocab — see BPE_VAL_LOSS_CAVEAT / write_results
-            "probes": bpe_probes,
-            "elapsed": bpe_elapsed,
-        }
+            probes = generate_probes(trainer)
+            best_val, best_epoch = best_val_loss_and_epoch(val_losses)
+
+            runs[(label, seed)] = {
+                "trainer": trainer,
+                "train_losses": train_losses,
+                "val_losses": val_losses,
+                "vocab_size": tokenizer.vocab_size,
+                "survived": vocab_survived,
+                "probes": probes,
+                "elapsed": elapsed,
+                "best_val_loss": best_val,
+                "best_epoch": best_epoch,
+                "epochs_run": len(train_losses),
+                "epochs_budget": epochs,
+                "output_path": output_path,
+            }
 
     write_results(production_vocab, base_samples, val_samples, reading_samples, clean_files, runs)
 
@@ -579,72 +463,100 @@ def write_results(production_vocab, base_samples, val_samples, reading_samples, 
     lines.append(f"generated: {time.strftime('%Y-%m-%d %H:%M:%S')}")
     lines.append(f"memory source: {MEMORY_PATH}")
     lines.append(f"reading source: {CLEAN_DIR} ({len(clean_files)} file(s), {len(reading_samples)} samples)")
+    epochs_str = ", ".join(f"{label}={EPOCHS_BY_CONFIG[label]}" for label in CONFIG_LABELS)
     lines.append(
-        f"epochs={EPOCHS} batch_size={BATCH_SIZE} max_vocab_size={MAX_VOCAB_SIZE} "
+        f"epoch budgets: {epochs_str} (early stop after {EARLY_STOP_PATIENCE} epochs "
+        f"without a >{LanguageModelTrainer.EARLY_STOP_MIN_DELTA} val loss improvement) "
+        f"batch_size={BATCH_SIZE} max_vocab_size={MAX_VOCAB_SIZE} "
         f"embedding_dim={EMBEDDING_DIM} nhead={NHEAD} num_layers={NUM_LAYERS} "
-        f"dim_feedforward={DIM_FEEDFORWARD} dropout={DROPOUT} lr={LEARNING_RATE}"
+        f"dim_feedforward={DIM_FEEDFORWARD} dropout={DROPOUT} lr={LEARNING_RATE} "
+        f"seeds={list(SEEDS)}"
     )
     lines.append(f"production vocab (current {PRODUCTION_CHECKPOINT.name}): {len(production_vocab)} words")
     lines.append(f"shared base pool: {len(base_samples)} samples")
-    lines.append(f"shared validation set (identical for both runs): {len(val_samples)} samples")
+    lines.append(f"shared validation set (identical for all {len(CONFIG_LABELS) * len(SEEDS)} runs): {len(val_samples)} samples")
     lines.append("")
 
-    run_labels = ("CONTROL", "READING", "TWOPHASE", "BPE", "BPE_READING")
-    header = f"{'':32}" + "".join(f"{label:>18}" for label in run_labels)
+    # --- per-seed detail + per-config mean/std of best val loss ---
+    config_stats = {}
+    for label in CONFIG_LABELS:
+        seed_runs = [runs[(label, seed)] for seed in SEEDS]
+        best_vals = [r["best_val_loss"] for r in seed_runs]
+        if any(v is None for v in best_vals):
+            raise RuntimeError(f"{label}: at least one seed produced no val loss (empty val split?)")
+        mean_best = statistics.mean(best_vals)
+        std_best = statistics.stdev(best_vals) if len(best_vals) > 1 else 0.0
+        best_seed_idx = min(range(len(SEEDS)), key=lambda i: best_vals[i])
+        config_stats[label] = {
+            "best_vals": best_vals,
+            "mean": mean_best,
+            "std": std_best,
+            "best_seed": SEEDS[best_seed_idx],
+        }
+
+        lines.append(
+            f"--- {label}: best val loss per seed "
+            f"(epoch budget {EPOCHS_BY_CONFIG[label]}, vocab {seed_runs[0]['vocab_size']}, "
+            f"production vocab survived {seed_runs[0]['survived']}/{len(production_vocab)}) ---"
+        )
+        for seed, val in zip(SEEDS, best_vals):
+            r = runs[(label, seed)]
+            converged = r["epochs_run"] < r["epochs_budget"]
+            status = (
+                f"early-stopped at epoch {r['epochs_run']}"
+                if converged
+                else f"hit epoch budget ({r['epochs_budget']}) without early-stopping"
+            )
+            lines.append(
+                f"  seed {seed}: best val loss {val:.4f} at epoch {r['best_epoch']}/{r['epochs_run']} "
+                f"({status}, {r['elapsed']:.1f}s, saved to {r['output_path'].name})"
+            )
+        lines.append(f"  mean = {mean_best:.4f}, std = {std_best:.4f}, best seed = {SEEDS[best_seed_idx]}")
+        lines.append("")
+
+    diff = config_stats["READING"]["mean"] - config_stats["CONTROL"]["mean"]
+    spread = max(config_stats["CONTROL"]["std"], config_stats["READING"]["std"])
+    significant = abs(diff) > spread
+    lines.append("--- CONTROL vs READING verdict ---")
+    lines.append(
+        f"mean best val loss: CONTROL {config_stats['CONTROL']['mean']:.4f} "
+        f"(std {config_stats['CONTROL']['std']:.4f}), "
+        f"READING {config_stats['READING']['mean']:.4f} (std {config_stats['READING']['std']:.4f})"
+    )
+    lines.append(f"difference (READING - CONTROL): {diff:+.4f}")
+    lines.append(f"spread (max of the two configs' seed-to-seed std): {spread:.4f}")
+    lines.append(
+        "=> "
+        + (
+            f"difference exceeds seed spread — {'READING' if diff < 0 else 'CONTROL'} looks genuinely better."
+            if significant
+            else "difference does NOT exceed seed spread — cannot conclude reading text helped or hurt; "
+            "this is noise at this seed count."
+        )
+    )
+    lines.append("")
+
+    lines.append("--- per-epoch losses (all seeds) ---")
+    for label in CONFIG_LABELS:
+        for seed in SEEDS:
+            run = runs[(label, seed)]
+            lines.append(f"{label}_s{seed}:")
+            for i, (t_loss, v_loss) in enumerate(zip(run["train_losses"], run["val_losses"]), start=1):
+                v_str = f"{v_loss:.4f}" if v_loss is not None else "n/a"
+                lines.append(f"  epoch {i}: train {t_loss:.4f}  val {v_str}")
+    lines.append("")
+
+    lines.append("--- probe generations (best seed per configuration) ---")
+    best_seed_labels = [f"{label} (s{config_stats[label]['best_seed']})" for label in CONFIG_LABELS]
+    header = f"{'':32}" + "".join(f"{lbl:>22}" for lbl in best_seed_labels)
     lines.append(header)
     lines.append("-" * len(header))
-
-    def row(label, key_fn):
-        values = "".join(f"{key_fn(runs[r]):>18}" for r in run_labels)
-        lines.append(f"{label:32}{values}")
-
-    row("final train loss", lambda r: f"{r['train_losses'][-1]:.4f}")
-    row("final val loss", lambda r: f"{r['val_losses'][-1]:.4f}" if r['val_losses'] and r['val_losses'][-1] is not None else "n/a")
-    row("epochs run", lambda r: str(len(r["train_losses"])))
-    row("train samples", lambda r: str(len(r["trainer"].train_samples)))
-    row("vocab size", lambda r: str(r["vocab_size"]))
-    row(
-        "production vocab survived",
-        lambda r: (
-            f"{r['survived']}/{len(production_vocab)} ({r['survived'] / len(production_vocab) * 100:.1f}%)"
-            if r["survived"] is not None else "n/a (not word vocab)"
-        ),
-    )
-    row("training time (s)", lambda r: f"{r['elapsed']:.1f}")
-    lines.append("")
-    lines.append(BPE_VAL_LOSS_CAVEAT)
-    lines.append("")
-
-    lines.append("--- TWOPHASE: val loss by phase (same held-out val set both times) ---")
-    twophase = runs["TWOPHASE"]
-    p1_val = twophase["phase1_val_losses"][-1] if twophase["phase1_val_losses"] and twophase["phase1_val_losses"][-1] is not None else None
-    p2_val = twophase["phase2_val_losses"][-1] if twophase["phase2_val_losses"] and twophase["phase2_val_losses"][-1] is not None else None
-    lines.append(f"after phase 1 (reading only, {len(twophase['phase1_train_losses'])} epochs): val loss {p1_val:.4f}" if p1_val is not None else "after phase 1: n/a")
-    lines.append(f"after phase 2 (base pool only, lr=1e-4, {len(twophase['phase2_train_losses'])} epochs): val loss {p2_val:.4f}" if p2_val is not None else "after phase 2: n/a")
-    lines.append("")
-
-    lines.append("--- per-epoch losses ---")
-    for label in ("CONTROL", "READING", "BPE", "BPE_READING"):
-        lines.append(f"{label}:")
-        run = runs[label]
-        for i, (t_loss, v_loss) in enumerate(zip(run["train_losses"], run["val_losses"]), start=1):
-            v_str = f"{v_loss:.4f}" if v_loss is not None else "n/a"
-            lines.append(f"  epoch {i}: train {t_loss:.4f}  val {v_str}")
-    lines.append("TWOPHASE phase 1 (reading only):")
-    for i, (t_loss, v_loss) in enumerate(zip(twophase["phase1_train_losses"], twophase["phase1_val_losses"]), start=1):
-        v_str = f"{v_loss:.4f}" if v_loss is not None else "n/a"
-        lines.append(f"  epoch {i}: train {t_loss:.4f}  val {v_str}")
-    lines.append("TWOPHASE phase 2 (base pool only, lr=1e-4):")
-    for i, (t_loss, v_loss) in enumerate(zip(twophase["phase2_train_losses"], twophase["phase2_val_losses"]), start=1):
-        v_str = f"{v_loss:.4f}" if v_loss is not None else "n/a"
-        lines.append(f"  epoch {i}: train {t_loss:.4f}  val {v_str}")
-    lines.append("")
-
-    lines.append("--- probe generations (paraphrases of real human_taught questions) ---")
     for question in PROBE_QUESTIONS:
         lines.append(f"Q: {question}")
-        for label in run_labels:
-            lines.append(f"  {label}: {runs[label]['probes'][question]}")
+        for label in CONFIG_LABELS:
+            best_seed = config_stats[label]["best_seed"]
+            reply = runs[(label, best_seed)]["probes"][question]
+            lines.append(f"  {label} (s{best_seed}): {reply}")
     lines.append("")
 
     report_text = "\n".join(lines)
