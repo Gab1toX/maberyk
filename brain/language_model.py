@@ -14,6 +14,7 @@ from typing import Iterable
 
 import torch
 from torch import nn
+from torch.nn.utils import clip_grad_norm_
 
 
 def normalize_text(text: str) -> str:
@@ -118,10 +119,10 @@ class AgentLanguageModel(nn.Module):
     def __init__(
         self,
         vocab_size: int,
-        embedding_dim: int = 128,
-        nhead: int = 4,
-        num_layers: int = 3,
-        dim_feedforward: int = 256,
+        embedding_dim: int = 256,
+        nhead: int = 8,
+        num_layers: int = 6,
+        dim_feedforward: int = 512,
         dropout: float = 0.1,
         pad_index: int = 0,
         tokenizer: "AgentTokenizer | _BPETokenizerBridge | None" = None,
@@ -241,12 +242,14 @@ class LanguageModelTrainer:
         self,
         memory_path: str | Path,
         max_vocab_size: int = 8192,
-        embedding_dim: int = 128,
-        nhead: int = 4,
-        num_layers: int = 3,
-        dim_feedforward: int = 256,
+        embedding_dim: int = 256,
+        nhead: int = 8,
+        num_layers: int = 6,
+        dim_feedforward: int = 512,
         dropout: float = 0.1,
-        learning_rate: float = 1e-3,
+        learning_rate: float = 1e-4,
+        warmup_steps: int = 500,
+        grad_clip_norm: float = 1.0,
         device: str | torch.device = "cpu",
         tokenizer_type: str = "word",
     ) -> None:
@@ -255,6 +258,17 @@ class LanguageModelTrainer:
         self.tokenizer_type = tokenizer_type
         self.memory_path = Path(memory_path)
         self.device = torch.device(device)
+        # Per-step LR schedule state for _run_epoch's warmup — base_lr is the
+        # post-warmup target, global_step counts optimizer.step() calls across
+        # every epoch of this trainer's lifetime (not reset per epoch), so a
+        # run whose epochs are shorter than warmup_steps batches carries the
+        # warmup into epoch 2+. lr=1e-3 with no warmup/clipping diverges at
+        # BIG size (11.7M+ params) — this default is what made the BIG
+        # architecture train instead of exploding.
+        self.base_lr = learning_rate
+        self.warmup_steps = warmup_steps
+        self.grad_clip_norm = grad_clip_norm
+        self.global_step = 0
 
         # self.samples stays the UNIQUE deduped pool — the train/val split is
         # built from it first so val can never contain a duplicate of a
@@ -465,6 +479,11 @@ class LanguageModelTrainer:
             if train:
                 self.optimizer.zero_grad()
                 loss.backward()
+                clip_grad_norm_(self.model.parameters(), self.grad_clip_norm)
+                self.global_step += 1
+                current_lr = self.base_lr * min(1.0, self.global_step / self.warmup_steps)
+                for group in self.optimizer.param_groups:
+                    group["lr"] = current_lr
                 self.optimizer.step()
 
             total_loss += loss.item()
@@ -474,6 +493,7 @@ class LanguageModelTrainer:
 
     def train(self, epochs: int = 10, batch_size: int = 16) -> list[float]:
         train_losses = []
+        val_losses = []
         best_val_loss = float("inf")
         stale_epochs = 0
         for epoch in range(epochs):
@@ -483,6 +503,7 @@ class LanguageModelTrainer:
 
             if self.val_samples:
                 val_loss = self._run_epoch(self.val_samples, batch_size, train=False)
+                val_losses.append(val_loss)
                 print(
                     f"[language_model] epoch {epoch + 1}/{epochs} — "
                     f"train loss {train_loss:.4f}, val loss {val_loss:.4f}"
@@ -503,6 +524,8 @@ class LanguageModelTrainer:
                 print(f"[language_model] epoch {epoch + 1}/{epochs} — train loss {train_loss:.4f} (no val split)")
 
         self.model.train()
+        self.val_losses = val_losses
+        self.best_val_loss = min(val_losses) if val_losses else None
         return train_losses
 
     def save(self, path: str | Path) -> None:
@@ -588,13 +611,39 @@ def main() -> None:
         "--tokenizer-type", choices=("word", "bpe"), default="word",
         help="'word' (default, unchanged) or 'bpe' (datos_lectura/tokenizer.json).",
     )
+    parser.add_argument("--embedding-dim", type=int, default=256)
+    parser.add_argument("--nhead", type=int, default=8)
+    parser.add_argument("--num-layers", type=int, default=6)
+    parser.add_argument("--dim-feedforward", type=int, default=512)
+    parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--warmup-steps", type=int, default=500)
+    parser.add_argument("--grad-clip-norm", type=float, default=1.0)
+    parser.add_argument(
+        "--early-stop-patience", type=int, default=LanguageModelTrainer.EARLY_STOP_PATIENCE,
+        help=f"Consecutive epochs without a >{LanguageModelTrainer.EARLY_STOP_MIN_DELTA} val "
+             f"loss improvement before stopping (default {LanguageModelTrainer.EARLY_STOP_PATIENCE}).",
+    )
     args = parser.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"[language_model] using device: {device}")
 
-    trainer = LanguageModelTrainer(args.memory, device=device, tokenizer_type=args.tokenizer_type)
+    trainer = LanguageModelTrainer(
+        args.memory,
+        embedding_dim=args.embedding_dim,
+        nhead=args.nhead,
+        num_layers=args.num_layers,
+        dim_feedforward=args.dim_feedforward,
+        learning_rate=args.lr,
+        warmup_steps=args.warmup_steps,
+        grad_clip_norm=args.grad_clip_norm,
+        device=device,
+        tokenizer_type=args.tokenizer_type,
+    )
+    trainer.EARLY_STOP_PATIENCE = args.early_stop_patience
     trainer.train(epochs=args.epochs, batch_size=args.batch_size)
+    if trainer.best_val_loss is not None:
+        print(f"[language_model] best val loss: {trainer.best_val_loss:.4f}")
     trainer.save(args.output)
     print(f"[language_model] weights saved to {args.output}")
 

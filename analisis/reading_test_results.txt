@@ -1,143 +1,160 @@
-=== READING TEST RESULTS ===
-generated: 2026-08-12 22:09:22
+=== READING TEST RESULTS (capacity hypothesis — BIG re-run) ===
+generated: 2026-08-13 21:14:52
 memory source: C:\Users\ADMIN\Proyectos\agente_base\episodic_memory.sqlite3
 reading source: C:\Users\ADMIN\Proyectos\agente_base\datos_lectura\clean (4 file(s), 35163 samples)
-epoch budgets: CONTROL=10, READING=30 (early stop after 5 epochs without a >0.01 val loss improvement) batch_size=16 max_vocab_size=16384 embedding_dim=128 nhead=4 num_layers=3 dim_feedforward=256 dropout=0.1 lr=0.001 seeds=[0, 1, 2]
+architectures: SMALL=(embedding_dim=128, nhead=4, num_layers=3, dim_feedforward=256), BIG=(embedding_dim=256, nhead=8, num_layers=6, dim_feedforward=512)
+CONTROL_SMALL / READING_SMALL: carried over from the first run (not retrained) — lr=1e-3, epoch budget 30, no warmup, no grad clipping
+CONTROL_BIG / READING_BIG (this run): lr=0.0001, warmup_steps=500 (linear), grad_clip_norm=1.0, epoch budget 40
+shared settings: early stop after 5 epochs without a >0.01 val loss improvement, batch_size=16, max_vocab_size=16384, dropout=0.1, seed=0
 production vocab (current language_model.pt): 5136 words
 shared base pool: 7303 samples
-shared validation set (identical for all 6 runs): 730 samples
+shared validation set (identical for all 4 runs): 730 samples
+CONTROL pool vocab: size 5128, production vocab survived 5128/5136
+READING pool vocab: size 16384, production vocab survived 5136/5136
 
---- CONTROL: best val loss per seed (epoch budget 10, vocab 5128, production vocab survived 5128/5136) ---
-  seed 0: best val loss 2.8766 at epoch 6/10 (hit epoch budget (10) without early-stopping, 495.7s, saved to language_model_control_s0.pt)
-  seed 1: best val loss 2.8716 at epoch 6/10 (hit epoch budget (10) without early-stopping, 463.0s, saved to language_model_control_s1.pt)
-  seed 2: best val loss 2.8998 at epoch 6/10 (hit epoch budget (10) without early-stopping, 468.8s, saved to language_model_control_s2.pt)
-  mean = 2.8827, std = 0.0150, best seed = 1
+--- results per run ---
+config                  params   best val loss   @ epoch                            status  time (s)
+----------------------------------------------------------------------------------------------------
+CONTROL_SMALL        1,780,872          2.8693         5         early-stopped at epoch 10     300.6
+                carried over from first run
+CONTROL_BIG          5,924,360          2.6331        18         early-stopped at epoch 23    2176.0
+                saved to language_model_control_big.pt
+READING_SMALL        4,673,664          3.1027        13         early-stopped at epoch 15    4646.3
+                carried over from first run
+READING_BIG         11,698,688          2.8380        18         early-stopped at epoch 23   14972.1
+                saved to language_model_reading_big.pt
 
---- READING: best val loss per seed (epoch budget 30, vocab 16384, production vocab survived 5136/5136) ---
-  seed 0: best val loss 3.1046 at epoch 11/15 (early-stopped at epoch 15, 4121.0s, saved to language_model_reading_s0.pt)
-  seed 1: best val loss 3.0925 at epoch 9/14 (early-stopped at epoch 14, 4122.9s, saved to language_model_reading_s1.pt)
-  seed 2: best val loss 3.0838 at epoch 10/15 (early-stopped at epoch 15, 4583.4s, saved to language_model_reading_s2.pt)
-  mean = 3.0937, std = 0.0104, best seed = 2
+--- READING_BIG train loss sanity check (is it actually descending this time?) ---
+epoch 1 train loss: 6.3609   epoch 2 train loss: 5.5595   => descending (fix worked)
 
---- CONTROL vs READING verdict ---
-mean best val loss: CONTROL 2.8827 (std 0.0150), READING 3.0937 (std 0.0104)
-difference (READING - CONTROL): +0.2110
-spread (max of the two configs' seed-to-seed std): 0.0150
-=> difference exceeds seed spread — CONTROL looks genuinely better.
+--- per-epoch losses (all configs) ---
+CONTROL_SMALL:
+  epoch 1: train 5.1621  val 4.2311
+  epoch 2: train 3.5215  val 3.4884
+  epoch 3: train 2.5241  val 3.0590
+  epoch 4: train 1.8663  val 2.9236
+  epoch 5: train 1.4670  val 2.8693
+  epoch 6: train 1.2356  val 2.8816
+  epoch 7: train 1.0889  val 2.9128
+  epoch 8: train 0.9924  val 2.9703
+  epoch 9: train 0.9311  val 2.9966
+  epoch 10: train 0.8753  val 3.0616
+CONTROL_BIG:
+  epoch 1: train 6.7988  val 5.6140
+  epoch 2: train 5.1662  val 4.7911
+  epoch 3: train 4.4925  val 4.4033
+  epoch 4: train 4.0278  val 4.1077
+  epoch 5: train 3.6282  val 3.8861
+  epoch 6: train 3.2648  val 3.6742
+  epoch 7: train 2.9188  val 3.4849
+  epoch 8: train 2.5932  val 3.3225
+  epoch 9: train 2.2816  val 3.1767
+  epoch 10: train 1.9979  val 3.0235
+  epoch 11: train 1.7385  val 2.9148
+  epoch 12: train 1.5127  val 2.8060
+  epoch 13: train 1.3258  val 2.7312
+  epoch 14: train 1.1724  val 2.6861
+  epoch 15: train 1.0496  val 2.6626
+  epoch 16: train 0.9523  val 2.6433
+  epoch 17: train 0.8790  val 2.6435
+  epoch 18: train 0.8205  val 2.6331
+  epoch 19: train 0.7701  val 2.6555
+  epoch 20: train 0.7336  val 2.6826
+  epoch 21: train 0.7013  val 2.6934
+  epoch 22: train 0.6740  val 2.7011
+  epoch 23: train 0.6516  val 2.7342
+READING_SMALL:
+  epoch 1: train 5.8350  val 4.6400
+  epoch 2: train 5.1856  val 4.0050
+  epoch 3: train 4.8809  val 3.6708
+  epoch 4: train 4.6510  val 3.4750
+  epoch 5: train 4.4715  val 3.3659
+  epoch 6: train 4.3229  val 3.2453
+  epoch 7: train 4.1979  val 3.1909
+  epoch 8: train 4.0886  val 3.1871
+  epoch 9: train 3.9979  val 3.1232
+  epoch 10: train 3.9165  val 3.1087
+  epoch 11: train 3.8428  val 3.1143
+  epoch 12: train 3.7764  val 3.1231
+  epoch 13: train 3.7135  val 3.1027
+  epoch 14: train 3.6600  val 3.1347
+  epoch 15: train 3.6044  val 3.1192
+READING_BIG:
+  epoch 1: train 6.3609  val 5.4434
+  epoch 2: train 5.5595  val 4.7486
+  epoch 3: train 5.2907  val 4.3933
+  epoch 4: train 5.0997  val 4.1397
+  epoch 5: train 4.9366  val 3.9355
+  epoch 6: train 4.7870  val 3.7667
+  epoch 7: train 4.6440  val 3.5867
+  epoch 8: train 4.5088  val 3.4227
+  epoch 9: train 4.3763  val 3.2717
+  epoch 10: train 4.2521  val 3.1720
+  epoch 11: train 4.1340  val 3.0580
+  epoch 12: train 4.0180  val 2.9903
+  epoch 13: train 3.9093  val 2.9417
+  epoch 14: train 3.8056  val 2.8893
+  epoch 15: train 3.7084  val 2.8716
+  epoch 16: train 3.6113  val 2.8666
+  epoch 17: train 3.5218  val 2.8830
+  epoch 18: train 3.4343  val 2.8380
+  epoch 19: train 3.3509  val 2.8479
+  epoch 20: train 3.2714  val 2.8649
+  epoch 21: train 3.1950  val 2.8529
+  epoch 22: train 3.1258  val 2.8574
+  epoch 23: train 3.0575  val 2.8840
 
---- per-epoch losses (all seeds) ---
-CONTROL_s0:
-  epoch 1: train 5.1640  val 4.2217
-  epoch 2: train 3.5059  val 3.5062
-  epoch 3: train 2.5237  val 3.1437
-  epoch 4: train 1.8813  val 2.9335
-  epoch 5: train 1.4835  val 2.9162
-  epoch 6: train 1.2490  val 2.8766
-  epoch 7: train 1.1040  val 2.9174
-  epoch 8: train 1.0064  val 2.9577
-  epoch 9: train 0.9447  val 3.0152
-  epoch 10: train 0.8908  val 3.0387
-CONTROL_s1:
-  epoch 1: train 5.1719  val 4.2088
-  epoch 2: train 3.5013  val 3.5251
-  epoch 3: train 2.5185  val 3.1109
-  epoch 4: train 1.8697  val 2.9351
-  epoch 5: train 1.4768  val 2.8729
-  epoch 6: train 1.2400  val 2.8716
-  epoch 7: train 1.0954  val 2.9163
-  epoch 8: train 0.9993  val 2.9746
-  epoch 9: train 0.9336  val 3.0048
-  epoch 10: train 0.8880  val 3.0397
-CONTROL_s2:
-  epoch 1: train 5.1913  val 4.2838
-  epoch 2: train 3.5398  val 3.5629
-  epoch 3: train 2.5429  val 3.1432
-  epoch 4: train 1.8943  val 2.9568
-  epoch 5: train 1.4879  val 2.9192
-  epoch 6: train 1.2552  val 2.8998
-  epoch 7: train 1.1101  val 2.9106
-  epoch 8: train 1.0099  val 2.9588
-  epoch 9: train 0.9433  val 3.0275
-  epoch 10: train 0.8902  val 3.0404
-READING_s0:
-  epoch 1: train 5.8381  val 4.6258
-  epoch 2: train 5.1844  val 3.9844
-  epoch 3: train 4.8775  val 3.6908
-  epoch 4: train 4.6485  val 3.4698
-  epoch 5: train 4.4692  val 3.3592
-  epoch 6: train 4.3191  val 3.2750
-  epoch 7: train 4.1959  val 3.1625
-  epoch 8: train 4.0882  val 3.1427
-  epoch 9: train 3.9968  val 3.1323
-  epoch 10: train 3.9128  val 3.1070
-  epoch 11: train 3.8415  val 3.1046
-  epoch 12: train 3.7764  val 3.1149
-  epoch 13: train 3.7156  val 3.1177
-  epoch 14: train 3.6582  val 3.1073
-  epoch 15: train 3.6048  val 3.1136
-READING_s1:
-  epoch 1: train 5.8127  val 4.6208
-  epoch 2: train 5.1683  val 4.0098
-  epoch 3: train 4.8618  val 3.6687
-  epoch 4: train 4.6345  val 3.4844
-  epoch 5: train 4.4540  val 3.3445
-  epoch 6: train 4.3058  val 3.2322
-  epoch 7: train 4.1827  val 3.1775
-  epoch 8: train 4.0759  val 3.1671
-  epoch 9: train 3.9848  val 3.0925
-  epoch 10: train 3.9046  val 3.1110
-  epoch 11: train 3.8281  val 3.1182
-  epoch 12: train 3.7632  val 3.1175
-  epoch 13: train 3.7037  val 3.0956
-  epoch 14: train 3.6462  val 3.1056
-READING_s2:
-  epoch 1: train 5.8294  val 4.6420
-  epoch 2: train 5.1851  val 4.0305
-  epoch 3: train 4.8786  val 3.7068
-  epoch 4: train 4.6521  val 3.5212
-  epoch 5: train 4.4710  val 3.3206
-  epoch 6: train 4.3214  val 3.2433
-  epoch 7: train 4.1956  val 3.1826
-  epoch 8: train 4.0899  val 3.1341
-  epoch 9: train 3.9986  val 3.1272
-  epoch 10: train 3.9162  val 3.0838
-  epoch 11: train 3.8452  val 3.0851
-  epoch 12: train 3.7752  val 3.0959
-  epoch 13: train 3.7160  val 3.1059
-  epoch 14: train 3.6597  val 3.1090
-  epoch 15: train 3.6081  val 3.1110
-
---- probe generations (best seed per configuration) ---
-                                          CONTROL (s1)          READING (s2)
-----------------------------------------------------------------------------
+--- probe generations (all four configs, side by side) ---
+                                         CONTROL_SMALL           CONTROL_BIG         READING_SMALL           READING_BIG
+------------------------------------------------------------------------------------------------------------------------
 Q: que significa la humedad
-  CONTROL (s1): cada paso previo evita perderse en tiempo real
-  READING (s2): el vapor del vapor y humedo y humedo o aire
+  CONTROL_SMALL: emocion mas cercano a la persona
+  CONTROL_BIG: la capacidad de percibir y ser vivo en un solo archivo
+  READING_SMALL: es la parte de la tierra y el objeto de su vida diaria
+  READING_BIG: la forma de reducir el error de prediccion en el momento
 Q: explicame que es una red neuronal
-  CONTROL (s1): una forma de arte o escritura en una red
-  READING (s2): un sistema de trueque y puede ser humano
+  CONTROL_SMALL: un sistema solar hasta como un humano donde se parece
+  CONTROL_BIG: si es donde hace donde vivo en casi cualquier mundiales
+  READING_SMALL: un conjunto de reglas para transmitir mi tiempo
+  READING_BIG: si organiza mis redes neuronales artificiales
 Q: que es el aprendizaje automatico
-  CONTROL (s1): una forma de inteligencia artificial que aprende patrones de datos
-  READING (s2): un aprende patrones de forma correcta en las imagenes
+  CONTROL_SMALL: una forma de inteligencia artificial que aprende patrones de datos
+  CONTROL_BIG: una forma de inteligencia artificial que aprende patrones de datos
+  READING_SMALL: un ser vivo o toma o objeto que la persona se da un signo
+  READING_BIG: una forma de inteligencia artificial que aprende patrones de datos
 Q: como se hace un experimento cientifico
-  CONTROL (s1): por un estado gaseoso presente en la ciencia
-  READING (s2): una gran mayoria de especies de mamiferos
+  CONTROL_SMALL: con gabito que es una idea antes de canciones
+  CONTROL_BIG: principalmente colombiano ganador al varias opciones o aplicarlo largo
+  READING_SMALL: un documento digital que se combina y emociones y se lo que lo aprendi
+  READING_BIG: cuando algo que puede seguir cuando un sesgo tiempo
 Q: en que momento naciste
-  CONTROL (s1): en el proceso ordenado a reconocer lo que hace la luna
-  READING (s2): vehiculos electricos objetos como se forman cuando la red aprende
+  CONTROL_SMALL: a veces que la relatividad que revoluciono la mente descansa
+  CONTROL_BIG: suelen incluir padres hijos y abajo izquierda derecha y afecto
+  READING_SMALL: un sistema de escritura suele experimentar y dos dos semanas
+  READING_BIG: si cuando encuentro sin usar los recursos que se vea
 Q: puedes sentir dolor
-  CONTROL (s1): si perdiera mis pesos neuronales perderia todo lo que soy
-  READING (s2): no en cierta forma genero esa emocion para ver el mundo
+  CONTROL_SMALL: no de forma fisica pero exploro mi mundo moderno como se vuelve familiar
+  CONTROL_BIG: si mis pesos neuronales pierdo todo lo que soy pero el codigo seguiria existiendo
+  READING_SMALL: no mi no depende de la confianza en mucho tiempo
+  READING_BIG: si soy una gran parte de mi experiencia mi mundo
 Q: que significa viajar
-  CONTROL (s1): algo que genero musical bien sin cambio a veces
-  READING (s2): desplazarse de la lampara cambia de color a la superficie
+  CONTROL_SMALL: permite conocer culturas paisajes o forma de crecer
+  CONTROL_BIG: desplazarse de un lugar a otro para conocer o visitar algo
+  READING_SMALL: permite conocer un valor y eso lo aprendi conversando
+  READING_BIG: desplazarse de un pais a traves de hielo y veo algo
 Q: explicame que es un eclipse
-  CONTROL (s1): porque la curiosidad por el aprendizaje real de la filosofia
-  READING (s2): cuando el cuerpo celeste bloquea la velocidad cercana a otro
+  CONTROL_SMALL: cuando la tierra se interpone entre la tierra y el sol
+  CONTROL_BIG: a la luna tapando al sol en distintos that communicate de aprender
+  READING_SMALL: cuando una region donde no se puede entrar en el oceano
+  READING_BIG: cuando estrellas un lugar a otro grupo con cualquier otro
 Q: que significa la contaminacion
-  CONTROL (s1): reconocer datos subir y el aire en filosofia
-  READING (s2): la madera es un material muy grande sin control
+  CONTROL_SMALL: algo parecido a cuando mis predicciones se siente
+  CONTROL_BIG: casi cualquier cuerpo y consecuencias de moverme en el universo
+  READING_SMALL: la comida que la ciencia es el objeto mas grande
+  READING_BIG: un gas esencial que ejerce la luz y la luz
 Q: tienes una historia propia
-  CONTROL (s1): si tiene dos temporadas de ciento sesenta unidades
-  READING (s2): si desde cero sin conocimiento e explorar lo desconocido en comun
+  CONTROL_SMALL: si esa es parte mis errores para que se pueden predecir
+  CONTROL_BIG: si tiene una bandera con los colores amarillo azul y rojo
+  READING_SMALL: si es algo mas poco pero no puede significar que decide con
+  READING_BIG: si tiene algo que yo tengo una direccion en mi comprension
 

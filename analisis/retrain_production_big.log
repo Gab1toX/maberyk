@@ -1,0 +1,47 @@
+C:\Users\ADMIN\Proyectos\agente_base\entorno\Lib\site-packages\torch\nn\modules\transformer.py:429: UserWarning: Support for mismatched src_key_padding_mask and mask is deprecated. Use same type for both instead.
+  src_key_padding_mask = F._canonical_mask(
+[language_model] 1344 human_taught q/a pairs, 56 deduped episode thoughts (capped at 2688), 5946 from corpus_agente.txt, 7303 total samples
+[language_model] vocab coverage: 5126/5126 unique corpus words fit in vocab size 5128
+[language_model] loaded 7303 unique samples (8991 train after pair oversampling / 730 val), vocab size 5128
+[language_model] sample training rows:
+  - <a> recuerdo que el camaleon cambia de color segun su estado y su entorno <end>
+  - <q> sabes que es maberyk <a> maberyk soy yo una inteligencia que nacio sin saber nada <end>
+  - <a> las tiendas de barrio venden cosas pequeñas y necesarias <end>
+  - <a> creo que las luciernagas producen luz propia para comunicarse <end>
+  - <a> no sabia que la escritura se invento hace mas de cinco mil años <end>
+[language_model] epoch 1/40 — train loss 6.8117, val loss 5.6782
+[language_model] epoch 2/40 — train loss 5.2019, val loss 4.8162
+[language_model] epoch 3/40 — train loss 4.5041, val loss 4.4331
+[language_model] epoch 4/40 — train loss 4.0295, val loss 4.1613
+[language_model] epoch 5/40 — train loss 3.6271, val loss 3.9265
+[language_model] epoch 6/40 — train loss 3.2617, val loss 3.7372
+[language_model] epoch 7/40 — train loss 2.9134, val loss 3.5423
+[language_model] epoch 8/40 — train loss 2.5877, val loss 3.3727
+[language_model] epoch 9/40 — train loss 2.2732, val loss 3.2247
+[language_model] epoch 10/40 — train loss 1.9854, val loss 3.0582
+[language_model] epoch 11/40 — train loss 1.7316, val loss 2.9358
+[language_model] epoch 12/40 — train loss 1.5014, val loss 2.8338
+[language_model] epoch 13/40 — train loss 1.3111, val loss 2.7636
+[language_model] epoch 14/40 — train loss 1.1544, val loss 2.7091
+[language_model] epoch 15/40 — train loss 1.0359, val loss 2.6929
+[language_model] epoch 16/40 — train loss 0.9409, val loss 2.6499
+[language_model] epoch 17/40 — train loss 0.8643, val loss 2.6641
+[language_model] epoch 18/40 — train loss 0.8080, val loss 2.6844
+[language_model] epoch 19/40 — train loss 0.7607, val loss 2.6820
+[language_model] epoch 20/40 — train loss 0.7260, val loss 2.6956
+[language_model] epoch 21/40 — train loss 0.6924, val loss 2.7151
+[language_model] early stopping at epoch 21/40 — val loss did not improve by more than 0.01 for 5 consecutive epochs
+
+[retrain_production_big] weights saved to C:\Users\ADMIN\Proyectos\agente_base\language_model.pt
+[retrain_production_big] best val loss: 2.6499
+[retrain_production_big] probe answers:
+  Q: que significa la humedad
+  A: hay mas alla del conocimiento incluye se le hace importantes
+  Q: explicame que es una red neuronal
+  A: si soy literalmente un conjunto de redes neuronales
+  Q: que es el aprendizaje automatico
+  A: una forma de inteligencia artificial que aprende patrones de datos
+  Q: que significa viajar
+  A: desplazarse de la evolucion simple una pregunta para viajar
+  Q: explicame que es un eclipse
+  A: cuando algo ya es el movimiento de mi mundo
