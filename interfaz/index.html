@@ -116,10 +116,169 @@
   }
   #toggle-panel:hover { color: var(--text); border-color: var(--accent); }
 
+  #tab-bar {
+    display: flex;
+    gap: 4px;
+    padding: 0 22px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--panel-border);
+    flex-shrink: 0;
+  }
+
+  .tab-button {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--muted);
+    padding: 10px 16px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .tab-button:hover { color: var(--text); }
+  .tab-button.active {
+    color: var(--text);
+    border-bottom-color: var(--accent);
+  }
+
+  .view.hidden { display: none; }
+
   .body-layout {
     flex: 1;
     display: flex;
     min-height: 0;
+  }
+
+  #review-view {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  #review-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    max-width: 860px;
+    width: 100%;
+    margin: 0 auto;
+  }
+
+  #review-counter {
+    align-self: flex-end;
+    font-size: 13px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .review-label {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-bottom: 6px;
+  }
+
+  #review-question {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--text);
+    background: var(--question-bubble);
+    border: 1px solid var(--question-border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+
+  #review-raw {
+    font-family: "Cascadia Code", Consolas, monospace;
+    font-size: 12px;
+    color: var(--muted);
+    opacity: 0.75;
+    background: #101317;
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 6px 10px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+
+  #review-textarea {
+    width: 100%;
+    min-height: 130px;
+    resize: vertical;
+    background: #101317;
+    border: 1px solid var(--panel-border);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 15px;
+    font-family: inherit;
+    line-height: 1.5;
+    outline: none;
+  }
+  #review-textarea:focus { border-color: var(--accent); }
+  #review-textarea:disabled { opacity: 0.5; }
+
+  #review-shortcuts {
+    font-size: 11px;
+    color: var(--muted);
+  }
+  #review-shortcuts kbd {
+    background: #2a2e37;
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-family: inherit;
+    color: var(--text);
+  }
+
+  #review-save-hint {
+    font-size: 12px;
+    color: var(--confidence);
+    min-height: 16px;
+  }
+
+  #review-empty {
+    color: var(--muted);
+    font-size: 14px;
+    padding: 60px 0;
+    text-align: center;
+  }
+  #review-empty.hidden { display: none; }
+
+  #review-enqueue-bar {
+    display: flex;
+    gap: 10px;
+    padding: 14px 20px;
+    background: var(--panel);
+    border-top: 1px solid var(--panel-border);
+    flex-shrink: 0;
+  }
+
+  #review-enqueue-input {
+    flex: 1;
+    background: #101317;
+    border: 1px solid var(--panel-border);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 14px;
+    outline: none;
+  }
+  #review-enqueue-input:focus { border-color: var(--accent); }
+
+  #review-enqueue-button {
+    background: var(--accent);
+    border: none;
+    color: white;
+    padding: 0 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
   }
 
   main {
@@ -371,7 +530,12 @@
   <button id="toggle-panel">pensamientos ▸</button>
 </header>
 
-<div class="body-layout">
+<div id="tab-bar">
+  <button id="tab-chat" class="tab-button active">Chat</button>
+  <button id="tab-review" class="tab-button">Revision por lotes</button>
+</div>
+
+<div class="body-layout view" id="chat-view">
   <main>
     <div id="chat"></div>
     <div id="correction-panel" class="hidden">
@@ -396,6 +560,42 @@
     <h2>Voz interior reciente</h2>
     <div id="inner-voice-list"></div>
   </aside>
+</div>
+
+<div id="review-view" class="view hidden">
+  <div id="review-content">
+    <div id="review-counter">0 / 0 pendientes</div>
+
+    <div>
+      <div class="review-label">pregunta</div>
+      <div id="review-question"></div>
+    </div>
+
+    <div>
+      <div class="review-label">cruda (solo contexto)</div>
+      <div id="review-raw"></div>
+    </div>
+
+    <div>
+      <div class="review-label">corregida (editable)</div>
+      <textarea id="review-textarea" rows="5" spellcheck="false"></textarea>
+    </div>
+
+    <div id="review-save-hint"></div>
+
+    <div id="review-shortcuts">
+      <kbd>Ctrl</kbd>+<kbd>Enter</kbd> guardar &nbsp;&nbsp;
+      <kbd>Ctrl</kbd>+<kbd>Backspace</kbd> rechazar &nbsp;&nbsp;
+      <kbd>Ctrl</kbd>+<kbd>&rarr;</kbd> saltar (queda pendiente)
+    </div>
+
+    <div id="review-empty" class="hidden">No hay correcciones pendientes.</div>
+  </div>
+
+  <div id="review-enqueue-bar">
+    <input id="review-enqueue-input" type="text" placeholder="Agregar pregunta a la cola de revision..." autocomplete="off">
+    <button id="review-enqueue-button">Agregar</button>
+  </div>
 </div>
 
 <script>
@@ -580,6 +780,191 @@
   refreshState();
   setInterval(refreshState, 2000);
   textInput.focus();
+
+  // ------------------------------------------------------------------
+  // Batch review view -- second tab, independent of the chat view above.
+  // ------------------------------------------------------------------
+
+  const tabChatButton = document.getElementById("tab-chat");
+  const tabReviewButton = document.getElementById("tab-review");
+  const chatView = document.getElementById("chat-view");
+  const reviewView = document.getElementById("review-view");
+
+  const reviewCounter = document.getElementById("review-counter");
+  const reviewQuestion = document.getElementById("review-question");
+  const reviewRaw = document.getElementById("review-raw");
+  const reviewTextarea = document.getElementById("review-textarea");
+  const reviewEmpty = document.getElementById("review-empty");
+  const reviewSaveHint = document.getElementById("review-save-hint");
+  const reviewEnqueueInput = document.getElementById("review-enqueue-input");
+  const reviewEnqueueButton = document.getElementById("review-enqueue-button");
+
+  // The locally held batch fetched from GET /queue/pending. Resolved items
+  // (save/reject) are spliced out immediately so the counter always reflects
+  // what is actually still left in this loaded batch; skipped items stay in
+  // place (still pending server-side) and are simply passed over.
+  let reviewQueue = [];
+  let reviewIndex = 0;
+  let reviewLoading = false;
+  let reviewBusy = false;
+
+  function switchTab(tab) {
+    const showReview = tab === "review";
+    chatView.classList.toggle("hidden", showReview);
+    reviewView.classList.toggle("hidden", !showReview);
+    tabChatButton.classList.toggle("active", !showReview);
+    tabReviewButton.classList.toggle("active", showReview);
+    if (showReview) {
+      if (reviewQueue.length === 0) {
+        loadReviewBatch();
+      } else {
+        renderReviewItem();
+      }
+    }
+  }
+
+  tabChatButton.addEventListener("click", () => switchTab("chat"));
+  tabReviewButton.addEventListener("click", () => switchTab("review"));
+
+  async function loadReviewBatch() {
+    if (reviewLoading) return;
+    reviewLoading = true;
+    reviewSaveHint.textContent = "Cargando...";
+    try {
+      const res = await fetch("/queue/pending");
+      if (!res.ok) throw new Error("bad response");
+      const data = await res.json();
+      reviewQueue = data.pending || [];
+      reviewIndex = 0;
+      reviewSaveHint.textContent = "";
+    } catch (err) {
+      reviewSaveHint.textContent = "No se pudo cargar la cola.";
+    } finally {
+      reviewLoading = false;
+      renderReviewItem();
+    }
+  }
+
+  function renderReviewItem() {
+    const total = reviewQueue.length;
+    if (total === 0) {
+      reviewCounter.textContent = "0 / 0 pendientes";
+      reviewQuestion.textContent = "";
+      reviewRaw.textContent = "";
+      reviewTextarea.value = "";
+      reviewTextarea.disabled = true;
+      reviewEmpty.classList.remove("hidden");
+      return;
+    }
+
+    reviewEmpty.classList.add("hidden");
+    reviewTextarea.disabled = false;
+    if (reviewIndex >= total) reviewIndex = total - 1;
+
+    const item = reviewQueue[reviewIndex];
+    reviewCounter.textContent = (reviewIndex + 1) + " / " + total + " pendientes";
+    reviewQuestion.textContent = item.question;
+    reviewRaw.textContent = item.raw_answer;
+    reviewTextarea.value = item.corrected_answer || "";
+    reviewTextarea.focus();
+    const end = reviewTextarea.value.length;
+    reviewTextarea.setSelectionRange(end, end);
+  }
+
+  async function resolveCurrentReviewItem(action) {
+    if (reviewBusy || reviewQueue.length === 0) return;
+    const item = reviewQueue[reviewIndex];
+
+    reviewBusy = true;
+    reviewSaveHint.textContent = action === "save" ? "Guardando..." : "Rechazando...";
+    try {
+      const body = { id: item.id, action: action };
+      if (action === "save") body.text = reviewTextarea.value;
+
+      const res = await fetch("/queue/resolve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        reviewSaveHint.textContent = "Error: " + (data.error || "desconocido");
+        return;
+      }
+
+      reviewSaveHint.textContent = action === "save"
+        ? "Guardado (" + data.source + ")"
+        : "Rechazado";
+
+      reviewQueue.splice(reviewIndex, 1);
+      if (reviewIndex >= reviewQueue.length) {
+        reviewIndex = Math.max(0, reviewQueue.length - 1);
+      }
+      renderReviewItem();
+    } catch (err) {
+      reviewSaveHint.textContent = "No se pudo conectar con Maberyk.";
+    } finally {
+      reviewBusy = false;
+    }
+  }
+
+  function skipCurrentReviewItem() {
+    if (reviewBusy || reviewQueue.length === 0) return;
+    reviewSaveHint.textContent = "";
+    if (reviewIndex + 1 < reviewQueue.length) {
+      reviewIndex += 1;
+      renderReviewItem();
+    } else {
+      // Ran off the end of this loaded batch -- refetch. Anything left
+      // pending (including whatever was just skipped) reappears; anything
+      // saved/rejected elsewhere in the meantime will not.
+      loadReviewBatch();
+    }
+  }
+
+  reviewTextarea.addEventListener("keydown", (event) => {
+    if (!event.ctrlKey) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      resolveCurrentReviewItem("save");
+    } else if (event.key === "Backspace") {
+      event.preventDefault();
+      resolveCurrentReviewItem("reject");
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      skipCurrentReviewItem();
+    }
+  });
+
+  async function enqueueReviewQuestion() {
+    const text = reviewEnqueueInput.value.trim();
+    if (!text) return;
+
+    reviewEnqueueButton.disabled = true;
+    try {
+      const res = await fetch("/queue/enqueue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questions: [text] }),
+      });
+      if (res.ok) {
+        reviewEnqueueInput.value = "";
+      }
+    } catch (err) {
+      // Server not reachable -- leave the text so the user can retry.
+    } finally {
+      reviewEnqueueButton.disabled = false;
+      reviewEnqueueInput.focus();
+    }
+  }
+
+  reviewEnqueueButton.addEventListener("click", enqueueReviewQuestion);
+  reviewEnqueueInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      enqueueReviewQuestion();
+    }
+  });
 })();
 </script>
 

@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import os
 import random
 import re
 import sqlite3
+import tempfile
 import unicodedata
 from collections import Counter
 from pathlib import Path
@@ -545,7 +547,23 @@ class LanguageModelTrainer:
         # datos_lectura/tokenizer.json fresh, same as training did (see
         # _load_bpe_tokenizer), so the checkpoint always matches the tokenizer
         # currently on disk rather than a frozen copy.
-        torch.save(payload, path)
+
+        # Atomic write: torch.save() straight to `path` let a concurrent
+        # reader (e.g. the live agent's lazy loader) observe a truncated
+        # file mid-write and fail. Writing to a temp file in the same
+        # directory and os.replace()-ing it onto `path` means readers only
+        # ever see the old complete file or the new complete file, never a
+        # partial one.
+        path = Path(path)
+        fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+        os.close(fd)
+        tmp_path = Path(tmp_name)
+        try:
+            torch.save(payload, tmp_path)
+            os.replace(tmp_path, path)
+        except BaseException:
+            tmp_path.unlink(missing_ok=True)
+            raise
 
     @classmethod
     def load_model(

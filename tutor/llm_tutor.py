@@ -18,6 +18,10 @@ from typing import Any
 
 _ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
 
+# Groq deprecated llama-3.3-70b-versatile on 2026-06-17.
+# Check https://console.groq.com/docs/deprecations before changing this.
+_GROQ_MODEL = "openai/gpt-oss-120b"
+
 _REJECTION_TOKEN = "RECHAZO"
 
 # Function words the tutor must be free to add when restructuring a sentence
@@ -102,7 +106,7 @@ class LLMTutor:
     def __init__(
         self,
         api_key: str | None = None,
-        model: str = "llama-3.3-70b-versatile",
+        model: str = _GROQ_MODEL,
         timeout: int = 30,
         common_words: list[str] | None = None,
         debug: bool = False,
@@ -127,6 +131,9 @@ class LLMTutor:
         Maberyk's own vocabulary. The human's message must never be passed
         here -- the tutor only ever teaches, it never speaks for Maberyk.
         """
+        # --- TEMP INSTRUMENTATION (remove after diagnosing the queue-worker gap) ---
+        print(f"[DEBUG/tutor-entry] raw_reply param repr={raw_reply!r}")
+        # --- END TEMP INSTRUMENTATION ---
         if not _has_known_verb(raw_reply):
             if self.debug:
                 print("[tutor:rejected] no-verb-in-raw")
@@ -161,6 +168,9 @@ class LLMTutor:
             max_new_words=self.max_new_words,
         )
 
+        # --- TEMP INSTRUMENTATION (remove after diagnosing the queue-worker gap) ---
+        print(f"[DEBUG/tutor-payload] raw_reply going into messages[user].content repr={raw_reply!r}")
+        # --- END TEMP INSTRUMENTATION ---
         payload = json.dumps(
             {
                 "model": self.model,
@@ -169,7 +179,16 @@ class LLMTutor:
                     {"role": "user", "content": raw_reply},
                 ],
                 "temperature": 0.1,
-                "max_tokens": 100,
+                "max_tokens": 300,
+                # gpt-oss models emit a chain-of-thought into a separate
+                # "reasoning" field before writing the final answer into
+                # "content" -- without these, that reasoning trace can
+                # consume the whole max_tokens budget and leave content
+                # empty (see the 2026-08-17 diagnosis). reasoning_format=
+                # "hidden" drops the trace from the response entirely;
+                # reasoning_effort="low" keeps the trace itself short.
+                "reasoning_effort": "low",
+                "reasoning_format": "hidden",
             }
         ).encode("utf-8")
 
@@ -189,9 +208,23 @@ class LLMTutor:
                 raw_body = response.read()
         except urllib.error.HTTPError as exc:
             try:
-                detail = exc.read().decode("utf-8", errors="replace")[:200]
+                raw_detail = exc.read().decode("utf-8", errors="replace")
             except Exception:
-                detail = ""
+                raw_detail = ""
+            error_code = None
+            if raw_detail:
+                try:
+                    error_code = json.loads(raw_detail).get("error", {}).get("code")
+                except (json.JSONDecodeError, AttributeError):
+                    error_code = None
+            if exc.code == 404 and error_code == "model_not_found":
+                print(
+                    f"[tutor] *** GROQ MODEL '{self.model}' NO LONGER EXISTS. "
+                    "Update _GROQ_MODEL in tutor/llm_tutor.py -- see "
+                    "https://console.groq.com/docs/deprecations ***"
+                )
+                return None
+            detail = raw_detail[:200]
             print(f"[tutor] Groq request failed: HTTP {exc.code}: {detail}")
             return None
         except (urllib.error.URLError, TimeoutError):
@@ -204,6 +237,9 @@ class LLMTutor:
         body: Any = None
         try:
             body = json.loads(raw_body.decode("utf-8"))
+            # --- TEMP INSTRUMENTATION (remove after diagnosing the queue-worker gap) ---
+            print(f"[DEBUG/tutor-response] full message dict repr={body['choices'][0]['message']!r}")
+            # --- END TEMP INSTRUMENTATION ---
             text = body["choices"][0]["message"]["content"].strip()
         except (KeyError, IndexError, json.JSONDecodeError):
             shown = body if body is not None else raw_body
@@ -216,6 +252,19 @@ class LLMTutor:
         if self.debug:
             print(f"[tutor:raw] {text}")
 
+        if not text:
+            # Distinct from a rejected-for-quality reply: content came back
+            # empty from the API itself (gpt-oss reasoning models can burn
+            # the whole max_tokens budget on their hidden reasoning trace
+            # before writing anything into content -- see the 2026-08-17
+            # diagnosis). Reporting this as "empty-or-too-long" made an API
+            # failure look like a model quality problem and cost three
+            # misdiagnoses. Never fall back to body["choices"][0]["message"]
+            # ["reasoning"] here -- that is the tutor's internal monologue,
+            # not a correction, and must never reach the corpus.
+            print("[tutor] empty content from API (reasoning may have consumed budget)")
+            return {"status": "rejected", "corrected": None, "new_words": [], "reason": "empty-content"}
+
         text = _strip_surrounding_quotes(text)
 
         if text == _REJECTION_TOKEN:
@@ -224,10 +273,10 @@ class LLMTutor:
             return {"status": "rejected", "corrected": None, "new_words": [], "reason": "model-rejected"}
 
         words = text.split()
-        if not text or len(words) > 25:
+        if len(words) > 25:
             if self.debug:
-                print("[tutor:rejected] empty-or-too-long")
-            return {"status": "rejected", "corrected": None, "new_words": [], "reason": "empty-or-too-long"}
+                print("[tutor:rejected] too-long")
+            return {"status": "rejected", "corrected": None, "new_words": [], "reason": "too-long"}
 
         new_words: list[str] = []
         seen: set[str] = set()

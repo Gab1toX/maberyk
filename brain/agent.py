@@ -6,6 +6,7 @@ from typing import Any, Iterable, TYPE_CHECKING
 
 import re
 import string
+import time
 import torch
 from torch import nn
 
@@ -44,6 +45,10 @@ _QUESTION_STARTS = frozenset((
 # Phrases that undo the most recent free-form teaching entry — see the undo
 # branch at the top of _respond_to_human_message.
 _UNDO_PHRASES = frozenset(("olvida eso", "olvidalo", "olvídalo", "eso no"))
+# A failed language_model.pt load no longer disables the model forever (see
+# _load_language_model) -- it backs off and retries on the next generation
+# attempt once this many seconds have passed since the last failure.
+_LANGUAGE_MODEL_RETRY_SECONDS = 30
 
 
 class Agent:
@@ -113,6 +118,10 @@ class Agent:
         self._language_model = None
         self._language_model_tokenizer = None
         self._language_model_unavailable = False
+        # Monotonic timestamp of the last failed load attempt, or None if the
+        # model has never failed to load. Drives the retry backoff in
+        # _language_model_retry_due() -- see _load_language_model.
+        self._language_model_last_failure: float | None = None
 
         # Voice is opt-in and desktop-only: Kaggle training loops never call
         # enable_voice(), so this stays off and _voice is never touched there.
@@ -673,16 +682,51 @@ class Agent:
             self.emotional_state.curiosity + 0.3,
         )
 
-    def _load_language_model(self) -> bool:
-        """Lazily load language_model.pt from the checkpoint directory.
-
-        Silent no-op if the file is missing or fails to load — the model is
-        an optional scaffold (see brain/language_model.py) and the agent must
-        keep functioning on ResponseEngine alone until it exists.
+    @property
+    def language_model_unavailable(self) -> bool:
+        """True while the language model is in its retry-backoff cooldown
+        after a failed load. Exposed for interfaces (e.g. web_mind.py's
+        /state endpoint) that want to surface this instead of letting a
+        latched failure look identical to the model choosing branch=silent.
         """
+        return self._language_model_unavailable
+
+    def _language_model_retry_due(self) -> bool:
+        if self._language_model_last_failure is None:
+            return True
+        return (time.monotonic() - self._language_model_last_failure) >= _LANGUAGE_MODEL_RETRY_SECONDS
+
+    def _mark_language_model_unavailable(self, reason: str) -> None:
+        first_failure = self._language_model_last_failure is None
+        self._language_model_unavailable = True
+        self._language_model_last_failure = time.monotonic()
+        if first_failure:
+            print(
+                f"[language_model] *** UNAVAILABLE: {reason} -- replies will fall "
+                f"back to branch=silent until a retry succeeds. Retrying every "
+                f"{_LANGUAGE_MODEL_RETRY_SECONDS}s. ***"
+            )
+        else:
+            print(f"[language_model] retry failed: {reason}")
+
+    def _load_language_model(self) -> bool:
+        """Loads (or retries loading) language_model.pt from the checkpoint
+        directory.
+
+        A failed load does not disable the model forever: it marks
+        _language_model_unavailable and records the failure time, and
+        _generate_language_model_response retries here again once
+        _language_model_retry_due() says the backoff window has passed. The
+        model remains an optional scaffold (see brain/language_model.py) --
+        the agent keeps functioning without it in the meantime.
+        """
+        is_retry = self._language_model_last_failure is not None
         path = self._checkpoint_dir / "language_model.pt"
+        if is_retry:
+            print(f"[language_model] retrying load of {path}...")
+
         if not path.exists():
-            self._language_model_unavailable = True
+            self._mark_language_model_unavailable(f"{path} not found")
             return False
 
         try:
@@ -692,19 +736,24 @@ class Agent:
             model.to(self.device)
             model.eval()
         except Exception as exc:
-            print(f"[language_model] failed to load {path}: {exc}")
-            self._language_model_unavailable = True
+            self._mark_language_model_unavailable(f"failed to load {path}: {exc}")
             return False
+
+        if is_retry:
+            print(f"[language_model] retry succeeded — {path} loaded, model available again")
 
         self._language_model = model
         self._language_model_tokenizer = tokenizer
+        self._language_model_unavailable = False
+        self._language_model_last_failure = None
         return True
 
     def _generate_language_model_response(self, human_message: str) -> str | None:
-        if self._language_model_unavailable:
-            return None
-        if self._language_model is None and not self._load_language_model():
-            return None
+        if self._language_model is None or self._language_model_unavailable:
+            if self._language_model_unavailable and not self._language_model_retry_due():
+                return None
+            if not self._load_language_model():
+                return None
 
         prompt_words = self._clean_words(human_message)
         if not prompt_words:
