@@ -281,6 +281,18 @@
     cursor: pointer;
   }
 
+  #review-suggest-button {
+    background: transparent;
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    padding: 0 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  #review-suggest-button:disabled { opacity: 0.5; cursor: default; }
+
   main {
     flex: 1;
     display: flex;
@@ -595,6 +607,7 @@
   <div id="review-enqueue-bar">
     <input id="review-enqueue-input" type="text" placeholder="Agregar pregunta a la cola de revision..." autocomplete="off">
     <button id="review-enqueue-button">Agregar</button>
+    <button id="review-suggest-button" title="Pide al motor de preguntas de Maberyk preguntas basadas en su estado actual y las agrega a la cola">usar preguntas de Maberyk</button>
   </div>
 </div>
 
@@ -798,6 +811,7 @@
   const reviewSaveHint = document.getElementById("review-save-hint");
   const reviewEnqueueInput = document.getElementById("review-enqueue-input");
   const reviewEnqueueButton = document.getElementById("review-enqueue-button");
+  const reviewSuggestButton = document.getElementById("review-suggest-button");
 
   // The locally held batch fetched from GET /queue/pending. Resolved items
   // (save/reject) are spliced out immediately so the counter always reflects
@@ -965,6 +979,40 @@
       enqueueReviewQuestion();
     }
   });
+
+  // Pulls candidates from GET /queue/suggest (read-only -- the question
+  // engine itself is never touched) and enqueues them through the same
+  // POST /queue/enqueue the manual-add box above uses, so both paths feed
+  // the one backlog the worker thread drains.
+  async function useMaberykQuestions() {
+    reviewSuggestButton.disabled = true;
+    const originalLabel = reviewSuggestButton.textContent;
+    reviewSuggestButton.textContent = "Pidiendo...";
+    try {
+      const suggestRes = await fetch("/queue/suggest?n=20");
+      if (!suggestRes.ok) return;
+      const suggestData = await suggestRes.json();
+      const questions = suggestData.questions || [];
+      if (questions.length === 0) return;
+
+      const enqueueRes = await fetch("/queue/enqueue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questions }),
+      });
+      if (enqueueRes.ok) {
+        const enqueueData = await enqueueRes.json();
+        reviewSaveHint.textContent = "Agregadas " + enqueueData.added + " preguntas de Maberyk.";
+      }
+    } catch (err) {
+      // Server not reachable -- silently give up, button re-enables below.
+    } finally {
+      reviewSuggestButton.disabled = false;
+      reviewSuggestButton.textContent = originalLabel;
+    }
+  }
+
+  reviewSuggestButton.addEventListener("click", useMaberykQuestions);
 })();
 </script>
 

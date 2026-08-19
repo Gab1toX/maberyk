@@ -228,11 +228,12 @@ class AgentLanguageModel(nn.Module):
 
 
 class LanguageModelTrainer:
-    """Loads human_taught Q/A pairs (primary) and corpus/thought sentences
-    (secondary, for fluency) from episodic_memory.sqlite3 and trains a
-    conditional AgentLanguageModel from scratch. Weights are saved separately
-    from agent_state.pt. agent_generated conversations are excluded — they are
-    the model's own past output, not ground truth to imitate."""
+    """Loads human_taught and tutor_approved Q/A pairs (primary) and
+    corpus/thought sentences (secondary, for fluency) from
+    episodic_memory.sqlite3 and trains a conditional AgentLanguageModel from
+    scratch. Weights are saved separately from agent_state.pt.
+    agent_generated conversations are excluded — they are the model's own
+    past output, not ground truth to imitate."""
 
     MAX_LEN = 32
     VAL_FRACTION = 0.1
@@ -280,9 +281,10 @@ class LanguageModelTrainer:
         if not self.samples:
             raise ValueError(
                 f"No training samples found in {self.memory_path}. "
-                "This scaffold trains primarily on human_taught question/answer "
-                "pairs, with corpus_agente.txt and episode thoughts mixed in for "
-                "fluency — agent_generated and unknown sources are excluded."
+                "This scaffold trains primarily on human_taught/tutor_approved "
+                "question/answer pairs, with corpus_agente.txt and episode "
+                "thoughts mixed in for fluency — agent_generated and unknown "
+                "sources are excluded."
             )
 
         self.train_samples, self.val_samples = self._split_train_val(self.samples)
@@ -376,7 +378,8 @@ class LanguageModelTrainer:
         connection = sqlite3.connect(self.memory_path)
         try:
             pair_rows = connection.execute(
-                "SELECT question, answer FROM conversations WHERE source = 'human_taught'"
+                "SELECT question, answer FROM conversations "
+                "WHERE source IN ('human_taught', 'tutor_approved')"
             ).fetchall()
             thought_rows = connection.execute(
                 "SELECT thought FROM episodes WHERE thought != '' AND thought IS NOT NULL"
@@ -426,7 +429,7 @@ class LanguageModelTrainer:
         random.shuffle(all_samples)
 
         print(
-            f"[language_model] {len(pair_samples)} human_taught q/a pairs, "
+            f"[language_model] {len(pair_samples)} human_taught/tutor_approved q/a pairs, "
             f"{len(thought_samples)} deduped episode thoughts (capped at {thought_cap}), "
             f"{len(corpus_samples)} from corpus_agente.txt, "
             f"{len(all_samples)} total samples"

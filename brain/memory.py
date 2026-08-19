@@ -81,6 +81,16 @@ class EpisodicMemory:
         scored_episodes.sort(key=lambda episode: episode["similarity"], reverse=True)
         return scored_episodes[:limit]
 
+    def recent_episodes(self, limit: int = 20) -> list[dict[str, Any]]:
+        """Most recently stored episodes, newest first, straight from the
+        in-memory cache (no SQLite read) -- unlike recall_by_surprise, which
+        scans the full episodes table, this stays cheap enough to call on
+        every request."""
+        return [
+            self._episode_for_public_use(episode)
+            for episode in self._episodes_by_recency[: int(limit)]
+        ]
+
     def recall_by_surprise(self, threshold: float) -> list[dict[str, Any]]:
         self.flush()
         rows = self.connection.execute(

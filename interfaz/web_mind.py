@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from brain.agent import _LANGUAGE_MODEL_RETRY_SECONDS
 from brain.correction_queue import CorrectionQueue
 from brain.language_model import AgentTokenizer, normalize_text
+from brain.questions import QuestionEngine
 from entorno.desktop_env import DesktopEnv
 from mind import STATE_PATH, create_agent, desktop_step, encode_desktop_observation
 
@@ -39,6 +40,7 @@ INNER_VOICE_MAXLEN = 5
 # could.
 QUEUE_WORKER_INTERVAL = 3.0
 DEFAULT_QUEUE_PENDING_LIMIT = 20
+DEFAULT_QUEUE_SUGGEST_LIMIT = 20
 
 # _respond_to_human_message() in brain/agent.py prints "[response] branch=X"
 # for every reply. That line is the only place the branch is exposed —
@@ -257,15 +259,7 @@ class AgentSession:
                 "retry_due": agent._language_model_retry_due(),
             }
 
-            # --- TEMP INSTRUMENTATION (remove after diagnosing the queue-worker gap) ---
-            _raw_answer_fn = agent._generate_language_model_response
-            print(
-                f"[DEBUG/lm-site] calling {_raw_answer_fn.__module__}.{_raw_answer_fn.__qualname__} "
-                f"id(agent)={id(agent)} model_loaded_before={agent._language_model is not None}"
-            )
-            live_reply = _raw_answer_fn(_DEBUG_LM_QUESTION)
-            print(f"[DEBUG/lm-site] raw result repr={live_reply!r}")
-            # --- END TEMP INSTRUMENTATION ---
+            live_reply = agent._generate_language_model_response(_DEBUG_LM_QUESTION)
 
             info["model_loaded_after_call"] = agent._language_model is not None
             info["unavailable_after_call"] = agent._language_model_unavailable
@@ -339,6 +333,56 @@ class AgentSession:
 
     def queue_stats(self) -> dict[str, int]:
         return self.correction_queue.stats()
+
+    def suggest_questions(self, n: int, episode_pool: int = 200) -> list[str]:
+        """Asks the question engine what it would ask right now, without
+        enqueuing anything and without disturbing the live question engine.
+
+        QuestionEngine.formulate() is deterministic given (emotional_state,
+        observation, vocabulary) -- calling the live engine's formulate()
+        n times with the agent's current emotional state would just produce
+        the same question n times, and would also reset its real cooldown/
+        confusion counters as a side effect of merely inspecting it. Instead
+        this runs formulate() on a disposable clone (same vocabulary/
+        thresholds/confusion state as the live engine right now) against the
+        agent's most recent stored episodes (brain/memory.py's
+        recent_episodes(), newest first, in-memory only) -- so each call
+        reflects the same "current state" the live engine would ask from,
+        applied to different real observations Maberyk actually just had.
+        Duplicate question strings are dropped, keeping the newest-first
+        order, until n unique ones are collected or the pool runs out.
+        """
+        with self.lock:
+            agent = self.agent
+            live_engine = agent.question_engine
+            clone = QuestionEngine(
+                vocabulary=list(live_engine.vocabulary),
+                confusion_threshold=live_engine.confusion_threshold,
+                required_steps=live_engine.required_steps,
+            )
+            clone.confusion_steps = live_engine.confusion_steps
+            clone.last_confusion = live_engine.last_confusion
+            clone.last_surprise = live_engine.last_surprise
+            clone._steps_since_last_question = live_engine._steps_since_last_question
+
+            emotional_state = agent.emotional_state
+            memory = agent.language
+            episodes = agent.memory.recent_episodes(limit=episode_pool)
+
+            seen: set[str] = set()
+            suggestions: list[str] = []
+            for episode in episodes:
+                if len(suggestions) >= n:
+                    break
+                observation = episode.get("outcome") or episode.get("observation")
+                if not isinstance(observation, dict):
+                    continue
+                question = clone.formulate(emotional_state, observation, memory)
+                if question in seen:
+                    continue
+                seen.add(question)
+                suggestions.append(question)
+            return suggestions
 
     def _apply_correction_via_agent(
         self, question: str, corrected: str, new_words: list[str]
@@ -573,6 +617,16 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"pending": self.session.queue_pending(limit=limit)})
         elif parsed.path == "/queue/stats":
             self._send_json(200, self.session.queue_stats())
+        elif parsed.path == "/queue/suggest":
+            params = urllib.parse.parse_qs(parsed.query)
+            n = DEFAULT_QUEUE_SUGGEST_LIMIT
+            if "n" in params:
+                try:
+                    n = int(params["n"][0])
+                except ValueError:
+                    self._send_json(400, {"error": "n must be an integer"})
+                    return
+            self._send_json(200, {"questions": self.session.suggest_questions(n)})
         else:
             self._send_json(404, {"error": "not found"})
 

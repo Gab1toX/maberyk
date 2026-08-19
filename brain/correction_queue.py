@@ -116,6 +116,24 @@ class CorrectionQueue:
         self.connection.commit()
         return cursor.rowcount > 0
 
+    def purge_rejected_before(self, cutoff: float) -> int:
+        """Deletes 'rejected' entries with created_at < cutoff (unix time).
+
+        Only ever touches status='rejected' rows -- 'pending' and 'approved'
+        entries are never deleted by this method regardless of age, since a
+        rejection can mean either a quality judgment (keep, it's signal) or
+        an API-layer failure (e.g. a deprecated model or the reasoning-token
+        bug swallowing the whole response) that never should have landed as
+        a queue entry at all. Callers are responsible for picking a cutoff
+        that only covers the known-bad period.
+        """
+        cursor = self.connection.execute(
+            "DELETE FROM correction_queue WHERE status = 'rejected' AND created_at < ?",
+            (cutoff,),
+        )
+        self.connection.commit()
+        return cursor.rowcount
+
     def stats(self) -> dict[str, int]:
         counts = {status: 0 for status in VALID_STATUSES}
         rows = self.connection.execute(

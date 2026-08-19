@@ -53,7 +53,7 @@ class LanguageEngine:
             if word in vocabulary:
                 return word
             base = word.rstrip("_0123456789")
-            return base if base and base in vocabulary else "something"
+            return base if base and base in vocabulary else "algo"
 
         def first_object() -> tuple[str | None, str | None]:
             if not isinstance(observation, dict):
@@ -85,44 +85,26 @@ class LanguageEngine:
                 emotion = max(values.items(), key=lambda item: item[1])[0]
                 return known_word(emotion)
 
-            return "something"
+            return "algo"
 
         object_name, color = first_object()
         event = ""
         if isinstance(observation, dict):
             event = str(observation.get("event", "")).lower()
 
-        has_spanish = any(
-            word in vocabulary
-            for word in ("veo", "siento", "cerca", "habitacion", "muevo", "objeto", "peligro")
-        )
-        use_spanish = has_spanish and self.random.random() < 0.5
-
         if "danger" in event or "reset" in event:
-            phrase = "siento peligro aqui" if use_spanish else "I sense danger here"
+            phrase = "siento peligro aqui"
         elif "touch" in event or "noise" in event or "changed_color" in event:
-            object_name = object_name or "something"
-            phrase = (
-                f"toque {object_name} y algo paso"
-                if use_spanish
-                else f"I touched {object_name} and something happened"
-            )
+            object_name = object_name or "algo"
+            phrase = f"toque {object_name} y algo paso"
         elif "moved" in event and object_name is None:
-            phrase = "me muevo y exploro" if use_spanish else "I am moving and exploring"
+            phrase = "me muevo y exploro"
         elif object_name is not None:
-            color = color or "something"
-            phrase = (
-                f"veo un {object_name} {color} cerca"
-                if use_spanish
-                else f"I see a {color} {object_name} nearby"
-            )
+            color = color or "algo"
+            phrase = f"veo un {object_name} {color} cerca"
         else:
             emotion_word = dominant_emotion()
-            phrase = (
-                f"siento {emotion_word} en este lugar"
-                if use_spanish
-                else f"I feel {emotion_word} about this place"
-            )
+            phrase = f"siento {emotion_word} en este lugar"
 
         selected_words = [
             word

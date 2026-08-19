@@ -131,9 +131,6 @@ class LLMTutor:
         Maberyk's own vocabulary. The human's message must never be passed
         here -- the tutor only ever teaches, it never speaks for Maberyk.
         """
-        # --- TEMP INSTRUMENTATION (remove after diagnosing the queue-worker gap) ---
-        print(f"[DEBUG/tutor-entry] raw_reply param repr={raw_reply!r}")
-        # --- END TEMP INSTRUMENTATION ---
         if not _has_known_verb(raw_reply):
             if self.debug:
                 print("[tutor:rejected] no-verb-in-raw")
@@ -168,9 +165,6 @@ class LLMTutor:
             max_new_words=self.max_new_words,
         )
 
-        # --- TEMP INSTRUMENTATION (remove after diagnosing the queue-worker gap) ---
-        print(f"[DEBUG/tutor-payload] raw_reply going into messages[user].content repr={raw_reply!r}")
-        # --- END TEMP INSTRUMENTATION ---
         payload = json.dumps(
             {
                 "model": self.model,
@@ -237,9 +231,6 @@ class LLMTutor:
         body: Any = None
         try:
             body = json.loads(raw_body.decode("utf-8"))
-            # --- TEMP INSTRUMENTATION (remove after diagnosing the queue-worker gap) ---
-            print(f"[DEBUG/tutor-response] full message dict repr={body['choices'][0]['message']!r}")
-            # --- END TEMP INSTRUMENTATION ---
             text = body["choices"][0]["message"]["content"].strip()
         except (KeyError, IndexError, json.JSONDecodeError):
             shown = body if body is not None else raw_body
