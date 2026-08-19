@@ -65,33 +65,20 @@ Entrada: el proceso por el cual las luz en energia
 Salida: RECHAZO"""
 
 
-_KNOWN_VERBS = frozenset({
-    "es", "son", "soy", "esta", "estan", "hay", "tiene", "tienen", "fue", "fui",
-    "ha", "han", "puede", "pueden", "permite", "sube", "baja", "vive", "viven",
-    "siento", "siente", "sienten", "aprendo", "aprende", "aprendio", "aprendi",
-    "nacio", "naci", "muestra", "mueve", "muevo", "explora", "exploro",
-    "percibo", "percibe", "predigo", "predice", "entiendo", "entiende",
-    "recuerdo", "recuerda", "guardo", "guarda", "toco", "toca", "veo", "ve",
-    "hago", "hace", "digo", "dice", "quiero", "quiere", "existo", "existe",
-    "crece", "crezco", "cambia", "cambio", "regresa", "llega", "pasa",
-    "ocurre", "sirve", "ayuda", "construyo", "construye", "ensena", "enseno",
-    "estudia", "programa", "entrena", "brilla", "refleja", "abre", "cierra",
-    "elijo", "elige", "uso", "usa", "intento", "intenta", "necesito",
-    "necesita", "funciona", "depende", "coincide", "falla", "acierta",
-    "sorprende", "importa", "significa", "contiene", "incluye",
-})
-
-
 def _strip_punctuation(word: str) -> str:
     return re.sub(r"^\W+|\W+$", "", word)
 
 
-def _has_known_verb(text: str) -> bool:
-    for raw_word in text.split():
-        word = _strip_punctuation(raw_word).lower()
-        if word in _KNOWN_VERBS:
-            return True
-    return False
+def _is_degenerate(text: str) -> bool:
+    """True for raw output too thin to correct at all: near-empty or a
+    single token stuttered in place of a sentence. Does not judge grammar
+    or word choice -- a noun phrase like "un lugar donde viven personas"
+    is a legitimate answer to a definition question and must pass."""
+    words = [w for w in text.split() if _strip_punctuation(w)]
+    if len(words) < 3:
+        return True
+    normalized = {_strip_punctuation(w).lower() for w in words}
+    return len(normalized) == 1
 
 
 def _strip_surrounding_quotes(text: str) -> str:
@@ -110,7 +97,7 @@ class LLMTutor:
         timeout: int = 30,
         common_words: list[str] | None = None,
         debug: bool = False,
-        max_new_words: int = 4,
+        max_new_words: int = 12,
     ) -> None:
         resolved_key = api_key if api_key is not None else os.environ.get("GROQ_API_KEY")
         if not resolved_key:
@@ -131,10 +118,10 @@ class LLMTutor:
         Maberyk's own vocabulary. The human's message must never be passed
         here -- the tutor only ever teaches, it never speaks for Maberyk.
         """
-        if not _has_known_verb(raw_reply):
+        if _is_degenerate(raw_reply):
             if self.debug:
-                print("[tutor:rejected] no-verb-in-raw")
-            return {"status": "rejected", "corrected": None, "new_words": [], "reason": "no-verb-in-raw"}
+                print("[tutor:rejected] degenerate-raw")
+            return {"status": "rejected", "corrected": None, "new_words": [], "reason": "degenerate-raw"}
 
         # Full vocabulary is kept only for the new_words check below -- the
         # prompt itself gets a small, relevant slice (words already present
@@ -218,6 +205,13 @@ class LLMTutor:
                     "https://console.groq.com/docs/deprecations ***"
                 )
                 return None
+            if exc.code == 429:
+                # Distinct from a plain API failure (None) so callers can
+                # choose to back off and retry instead of dropping the
+                # question -- this is the free-tier TPM limit, not a broken
+                # request.
+                print("[tutor] Groq request failed: HTTP 429 (rate limited)")
+                return {"status": "rate_limited", "corrected": None, "new_words": [], "reason": "rate-limited"}
             detail = raw_detail[:200]
             print(f"[tutor] Groq request failed: HTTP {exc.code}: {detail}")
             return None

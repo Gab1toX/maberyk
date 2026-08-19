@@ -37,8 +37,12 @@ INNER_VOICE_MAXLEN = 5
 
 # Batch correction queue worker: seconds between Groq calls, so an enqueued
 # backlog never hammers the tutor API the way a burst of live chat messages
-# could.
-QUEUE_WORKER_INTERVAL = 3.0
+# could. Groq's free tier caps at 8000 TPM -- 3s between calls still tripped
+# 429s, so this is deliberately conservative.
+QUEUE_WORKER_INTERVAL = 6.0
+# On a 429 (rate limited), how long to wait before retrying the same
+# question once more instead of dropping it outright.
+QUEUE_RATE_LIMIT_BACKOFF_SECONDS = 30.0
 DEFAULT_QUEUE_PENDING_LIMIT = 20
 DEFAULT_QUEUE_SUGGEST_LIMIT = 20
 
@@ -524,6 +528,11 @@ class AgentSession:
         this path -- even though /debug/lm, calling the same method with no
         such gate, worked fine. The LM call and the tutor call are
         independent concerns; only the tutor step needs tutor availability.
+
+        The tutor.correct() call (and the rate-limit backoff below) run
+        outside self.lock: neither touches agent state, and holding the
+        global lock across a 30s backoff would freeze live chat for up to a
+        minute. Only the LM generation and the final queue write need it.
         """
         with self.lock:
             lm_reply = self.agent._generate_language_model_response(question)
@@ -535,11 +544,23 @@ class AgentSession:
                 print(f"[queue] skipped (tutor unavailable): {question}")
                 return
 
-            result = self.agent._tutor.correct(lm_reply, set(self.agent.language.vocabulary))
-            if result is None:
-                print(f"[queue] skipped (tutor API failure): {question}")
+            tutor = self.agent._tutor
+            vocabulary = set(self.agent.language.vocabulary)
+
+        result = tutor.correct(lm_reply, vocabulary)
+        if result is not None and result.get("status") == "rate_limited":
+            print(f"[queue] rate limited, retrying in {QUEUE_RATE_LIMIT_BACKOFF_SECONDS:.0f}s: {question}")
+            time.sleep(QUEUE_RATE_LIMIT_BACKOFF_SECONDS)
+            result = tutor.correct(lm_reply, vocabulary)
+            if result is not None and result.get("status") == "rate_limited":
+                print(f"[queue] skipped (still rate limited after retry): {question}")
                 return
 
+        if result is None:
+            print(f"[queue] skipped (tutor API failure): {question}")
+            return
+
+        with self.lock:
             if result["status"] == "rejected":
                 self.correction_queue.enqueue_result(
                     question, lm_reply, None, result.get("new_words", []), status="rejected"
@@ -631,13 +652,22 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             self._send_json(404, {"error": "not found"})
 
     def _read_json_body(self) -> dict | None:
-        """Read and parse the request body as JSON. On malformed JSON, sends
-        the 400 response itself and returns None -- callers just bail out.
+        """Read and parse the request body as JSON. On malformed JSON or
+        bytes that aren't valid UTF-8, sends the 400 response itself and
+        returns None -- callers just bail out. A client must never be able
+        to kill a handler thread with a bad request body.
         """
         length = int(self.headers.get("Content-Length", 0) or 0)
         raw = self.rfile.read(length) if length else b""
+        if not raw:
+            return {}
         try:
-            return json.loads(raw.decode("utf-8")) if raw else {}
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            self._send_json(400, {"error": "request body must be UTF-8 encoded"})
+            return None
+        try:
+            return json.loads(text)
         except json.JSONDecodeError:
             self._send_json(400, {"error": "invalid json"})
             return None
