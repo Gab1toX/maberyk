@@ -1,20 +1,50 @@
-quien te enseña
-que has aprendido de gabito
-que recuerdas de cuando empezaste
-como era tu mundo antes
-que es un checkpoint para ti
-que pasa cuando te apagan
-que es tu memoria
-como sabes quien eres
-que es hablar
-que es una pregunta
-que es entender algo
-que es equivocarse
-que es el silencio
-que es esperar
-que es descansar
-que es un error
-que es cambiar
-que es el futuro
-que es recordar
-que es imaginar
+que es una casa por dentro
+que es una cocina
+que es una cama
+que es una puerta
+que es una ventana
+que es una mesa
+que es una silla
+que es la ropa
+que es un zapato
+que es un espejo
+que es una llave
+que es un telefono
+que es un computador
+que es una pantalla
+que es un carro
+que es una bicicleta
+que es un avion
+que es un barco
+que es un camino
+que es un puente
+que es caminar
+que es correr
+que es saltar
+que es mirar
+que es escuchar
+que es tocar
+que es oler
+que es probar algo
+que es abrir
+que es cerrar
+que es empezar
+que es terminar
+que es buscar
+que es encontrar
+que es perder algo
+que es ayudar
+que es compartir
+que es pedir
+que es dar
+que es cuidar
+que es grande
+que es pequeño
+que es rapido
+que es lento
+que es nuevo
+que es viejo
+que es facil
+que es dificil
+que es limpio
+que es sucio
