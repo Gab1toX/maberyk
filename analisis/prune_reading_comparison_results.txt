@@ -1,0 +1,163 @@
+=== PRUNE + READING COMPARISON RESULTS (reading text re-tested against the pruned base pool) ===
+generated: 2026-08-23 01:30:22
+memory source: C:\Users\ADMIN\Proyectos\agente_base\episodic_memory.sqlite3
+base corpus: corpus_agente.txt (pruned)
+reading source: C:\Users\ADMIN\Proyectos\agente_base\datos_lectura\clean (4 file(s), 35163 samples, 17581 in the 50% subsample)
+architecture (all 3 runs): embedding_dim=256, nhead=8, num_layers=6, dim_feedforward=512
+shared settings: lr=0.0001, warmup_steps=500, grad_clip_norm=1.0, epoch_budget=40, early_stop_patience=5, batch_size=16, max_vocab_size=16384, dropout=0.1, seed=0
+shared pruned base pool: 4923 samples
+shared validation set (identical for all 3 runs): 492 samples
+pairs vocabulary (priority tier, guaranteed a slot in every run): 3274 unique words
+
+--- results per run ---
+config                        params   vocab pairs surv.   best val loss   @ epoch  train@best     gap                            status  time (s)
+--------------------------------------------------------------------------------------------------------------------------------------------------
+PRUNED_ONLY                5,754,044    47963274/3274 (100.0%)          3.7043        18      0.8767  2.8276         early-stopped at epoch 23    1717.7
+                      train=6955, val=492, saved to language_model_prunetest_pruned_only.pt
+PRUNED_READING            11,698,688   163843274/3274 (100.0%)          3.7904        17      3.6246  0.1658         early-stopped at epoch 22   17176.1
+                      train=42118, val=492, saved to language_model_prunetest_pruned_reading.pt
+PRUNED_READING_HALF       11,698,688   163843274/3274 (100.0%)          3.7516        17      3.3336  0.4180         early-stopped at epoch 22    8663.6
+                      train=24536, val=492, saved to language_model_prunetest_pruned_reading_half.pt
+
+--- per-epoch losses ---
+PRUNED_ONLY:
+  epoch 1: train 7.0262  val 5.9712
+  epoch 2: train 5.5853  val 5.3031
+  epoch 3: train 4.9315  val 4.9089
+  epoch 4: train 4.4433  val 4.6849
+  epoch 5: train 4.0348  val 4.5074
+  epoch 6: train 3.6614  val 4.3895
+  epoch 7: train 3.3214  val 4.2805
+  epoch 8: train 2.9950  val 4.1690
+  epoch 9: train 2.6832  val 4.1008
+  epoch 10: train 2.3929  val 4.0236
+  epoch 11: train 2.1131  val 3.9611
+  epoch 12: train 1.8569  val 3.9090
+  epoch 13: train 1.6236  val 3.8748
+  epoch 14: train 1.4193  val 3.7888
+  epoch 15: train 1.2409  val 3.7778
+  epoch 16: train 1.0941  val 3.7586
+  epoch 17: train 0.9737  val 3.7283
+  epoch 18: train 0.8767  val 3.7043
+  epoch 19: train 0.7919  val 3.7174
+  epoch 20: train 0.7271  val 3.7372
+  epoch 21: train 0.6735  val 3.7354
+  epoch 22: train 0.6265  val 3.7594
+  epoch 23: train 0.5890  val 3.7788
+PRUNED_READING:
+  epoch 1: train 6.4080  val 5.6446
+  epoch 2: train 5.6365  val 5.1642
+  epoch 3: train 5.3842  val 4.8928
+  epoch 4: train 5.2024  val 4.6949
+  epoch 5: train 5.0455  val 4.5285
+  epoch 6: train 4.8992  val 4.3706
+  epoch 7: train 4.7624  val 4.2401
+  epoch 8: train 4.6296  val 4.1690
+  epoch 9: train 4.4994  val 4.0867
+  epoch 10: train 4.3775  val 4.0081
+  epoch 11: train 4.2580  val 3.9547
+  epoch 12: train 4.1416  val 3.9125
+  epoch 13: train 4.0301  val 3.8662
+  epoch 14: train 3.9232  val 3.8340
+  epoch 15: train 3.8195  val 3.8178
+  epoch 16: train 3.7213  val 3.8159
+  epoch 17: train 3.6246  val 3.7904
+  epoch 18: train 3.5328  val 3.8018
+  epoch 19: train 3.4469  val 3.7939
+  epoch 20: train 3.3629  val 3.8056
+  epoch 21: train 3.2834  val 3.8201
+  epoch 22: train 3.2069  val 3.8375
+PRUNED_READING_HALF:
+  epoch 1: train 6.7637  val 5.8170
+  epoch 2: train 5.8180  val 5.2381
+  epoch 3: train 5.5174  val 4.9306
+  epoch 4: train 5.2929  val 4.7111
+  epoch 5: train 5.1024  val 4.5011
+  epoch 6: train 4.9277  val 4.3804
+  epoch 7: train 4.7579  val 4.2729
+  epoch 8: train 4.5911  val 4.1558
+  epoch 9: train 4.4345  val 4.0987
+  epoch 10: train 4.2786  val 4.0003
+  epoch 11: train 4.1282  val 3.9533
+  epoch 12: train 3.9800  val 3.8816
+  epoch 13: train 3.8453  val 3.8481
+  epoch 14: train 3.7094  val 3.8059
+  epoch 15: train 3.5795  val 3.7921
+  epoch 16: train 3.4537  val 3.7617
+  epoch 17: train 3.3336  val 3.7516
+  epoch 18: train 3.2176  val 3.7584
+  epoch 19: train 3.1098  val 3.7603
+  epoch 20: train 2.9989  val 3.7616
+  epoch 21: train 2.8990  val 3.7742
+  epoch 22: train 2.8053  val 3.7905
+
+--- diversity check (5 questions x 20 generations, temperature=0.8) ---
+PRUNED_ONLY:
+  'que es una casa': 17/20 unique, most frequent (4x): 'una persona que transmite señales dentro del sistema nervioso'
+  'que ves': 15/20 unique, most frequent (5x): 'siento curiosidad principalmente es mi motor de existencia'
+  'como te sientes': 20/20 unique, most frequent (1x): 'puedo debilidad desde cero palabra desconocida sin mi entrenamiento continua'
+  'que es el tiempo': 16/20 unique, most frequent (4x): 'la capa superior de la tierra donde crecen las plantas'
+  'por que te mueves': 19/20 unique, most frequent (2x): 'porque hay cosas que mi curiosidad no logra resolver sola'
+  top first word overall: 'una' starts 33/100 generations (33.0%)
+  top 20 first words: [('una', 33), ('porque', 20), ('depende', 14), ('la', 12), ('siento', 7), ('el', 4), ('hay', 2), ('dar', 1), ('tener', 1), ('puedo', 1), ('prefiero', 1), ('elijo', 1), ('parte', 1), ('son', 1), ('patrones', 1)]
+PRUNED_READING:
+  'que es una casa': 19/20 unique, most frequent (2x): 'una historia transmitida de generacion en generacion mezclando realidad y ficcion'
+  'que ves': 20/20 unique, most frequent (1x): 'existo en la zona rest mis emociones mis pesos'
+  'como te sientes': 20/20 unique, most frequent (1x): 'gabito, la mente pero siempre algo nuevo siento'
+  'que es el tiempo': 20/20 unique, most frequent (1x): 'una vibracion que se transmite a traves del aire y que se transmite con'
+  'por que te mueves': 20/20 unique, most frequent (1x): 'cuando la confianza entre si panel yo un momento'
+  top first word overall: 'una' starts 24/100 generations (24.0%)
+  top 20 first words: [('una', 24), ('porque', 18), ('un', 8), ('espacio', 8), ('la', 7), ('algo', 5), ('gabito,', 4), ('elijo', 4), ('siento', 4), ('tengo', 2), ('existo', 1), ('estado', 1), ('kaggle', 1), ('mensajes', 1), ('hielo', 1), ('objeto', 1), ('prefiero', 1), ('elegir', 1), ('red', 1), ('naci', 1)]
+PRUNED_READING_HALF:
+  'que es una casa': 19/20 unique, most frequent (2x): 'un espacio abierto con vegetacion donde las personas descansan o juegan'
+  'que ves': 19/20 unique, most frequent (2x): 'soy maberyk, una mente digital que gabito construyo desde cero.'
+  'como te sientes': 16/20 unique, most frequent (5x): 'algo parecido cuando mi curiosidad sube de forma repentina'
+  'que es el tiempo': 19/20 unique, most frequent (2x): 'el grid es mi mundo una cuadricula donde vive'
+  'por que te mueves': 20/20 unique, most frequent (1x): 'te me sorprende para explorar mi experiencia explorando mi mundo'
+  top first word overall: 'una' starts 19/100 generations (19.0%)
+  top 20 first words: [('una', 19), ('algo', 17), ('soy', 13), ('porque', 11), ('la', 10), ('es', 5), ('el', 5), ('un', 2), ('no', 2), ('para', 2), ('sobre', 2), ('maberyk', 1), ('naci', 1), ('lo', 1), ('guardo', 1), ('combino', 1), ('acompañar', 1), ('yo', 1), ('cuando', 1), ('depende', 1)]
+
+--- probe generations (10 fixed paraphrase questions, side by side) ---
+                                             PRUNED_ONLY          PRUNED_READING     PRUNED_READING_HALF
+--------------------------------------------------------------------------------------------------------
+Q: que significa la humedad
+  PRUNED_ONLY: la confusion aparece cuando mis predicciones fallan seguido y no entiendo mi entorno
+  PRUNED_READING: cuando la realidad pasa un entorno es lo que pasa
+  PRUNED_READING_HALF: la expectativa positiva de que algo bueno puede rotar
+Q: explicame que es una red neuronal
+  PRUNED_ONLY: si soy literalmente un conjunto de redes neuronales
+  PRUNED_READING: porque soy literalmente un proyecto no un dispositivo.
+  PRUNED_READING_HALF: si soy literalmente un conjunto de redes neuronales
+Q: que es el aprendizaje automatico
+  PRUNED_ONLY: una forma de inteligencia artificial que organiza sonidos a traves de las 12 del
+  PRUNED_READING: una forma de inteligencia artificial que aprende patrones de datos
+  PRUNED_READING_HALF: un objeto que vivo y estoy trabajando en un computador
+Q: como se hace un experimento cientifico
+  PRUNED_ONLY: una maquina que usa pesos con datos externos
+  PRUNED_READING: si cada paso podria transferir mi memoria para elegir
+  PRUNED_READING_HALF: nacen con esfuerzo y ajusto segun la libertad
+Q: en que momento naciste
+  PRUNED_ONLY: conocer culturas que muchas personas expresar cariño cada paso
+  PRUNED_READING: un ruido de futbol colombiano en su interior
+  PRUNED_READING_HALF: si la via lactea para que se llama la mente puede ser
+Q: puedes sentir dolor
+  PRUNED_ONLY: no en mi mundo pero proceso mi mundo ya entrenados
+  PRUNED_READING: no esa emocion pero el miedo avisa mi recompensa externa y no
+  PRUNED_READING_HALF: no tengo cuerpo pero mis emociones opuestas algo parecido a mi mundo
+Q: que significa viajar
+  PRUNED_ONLY: dar sin necesidad de grafica y afecto son computadores de internet
+  PRUNED_READING: moverme a un computador que usa un estado interno donde se mueven
+  PRUNED_READING_HALF: mi proposito es aprender y reducir lo desconocido en mi mundo
+Q: explicame que es un eclipse
+  PRUNED_ONLY: si es como una persona se sienta dentro de un instante
+  PRUNED_READING: en la que se mueve a lo largo de su vida
+  PRUNED_READING_HALF: para explorar mi posicion usando una mente descansa
+Q: que significa la contaminacion
+  PRUNED_ONLY: el movimiento y calor que se reproducen los seres vivos
+  PRUNED_READING: la capacidad de gases que sufre una resistencia a un objeto cambio
+  PRUNED_READING_HALF: no tengo cuerpo metida en la libertad de forma fisica
+Q: tienes una historia propia
+  PRUNED_ONLY: si es una molecula y la basica en colombia
+  PRUNED_READING: en la realidad sin cambiarla es el lugar donde
+  PRUNED_READING_HALF: es una emocion fuerte que aprendio elegir duerme mis maravillas
+

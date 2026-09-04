@@ -1,0 +1,148 @@
+=== PRUNE COMPARISON RESULTS (pruned corpus vs original corpus, BIG vs SMALL) ===
+generated: 2026-08-22 15:03:46
+memory source: C:\Users\ADMIN\Proyectos\agente_base\episodic_memory.sqlite3
+pruned corpus: corpus_agente.txt
+original corpus: corpus_agente_original.txt
+architectures: BIG=(embedding_dim=256, nhead=8, num_layers=6, dim_feedforward=512), SMALL=(embedding_dim=128, nhead=4, num_layers=3, dim_feedforward=256)
+shared settings: batch_size=16, max_vocab_size=8192, dropout=0.1, seed=0
+shared pruned base pool: 4923 samples
+original-only extra lines added to ORIGINAL's train split: 2442
+shared validation set (identical for all 3 runs): 492 samples
+
+--- results per run ---
+config                pool   arch        params   best val loss   @ epoch  train@best     gap                            status  time (s)
+-----------------------------------------------------------------------------------------------------------------------------------------
+PRUNED_BIG          PRUNED    BIG     5,754,044          3.8743        19      0.7903  3.0840         early-stopped at epoch 24    1774.3
+                lr=0.0001, warmup=500, clip=1.0, vocab=4796, train=6979, val=492, saved to language_model_prunetest_pruned_big.pt
+PRUNED_SMALL        PRUNED  SMALL     1,695,548          4.1078         5      1.7603  2.3475         early-stopped at epoch 10     240.6
+                lr=0.001, warmup=100, clip=1.0, vocab=4796, train=6979, val=492, saved to language_model_prunetest_pruned_small.pt
+ORIGINAL_BIG      ORIGINAL    BIG     5,990,024          3.4193        15      1.0044  2.4149         early-stopped at epoch 18    1851.7
+                lr=0.0001, warmup=500, clip=1.0, vocab=5256, train=9421, val=492, saved to language_model_prunetest_original_big.pt
+
+--- per-epoch losses ---
+PRUNED_BIG:
+  epoch 1: train 7.0146  val 6.0532
+  epoch 2: train 5.5664  val 5.3895
+  epoch 3: train 4.9125  val 5.0488
+  epoch 4: train 4.4211  val 4.8335
+  epoch 5: train 4.0143  val 4.6678
+  epoch 6: train 3.6451  val 4.5400
+  epoch 7: train 3.2984  val 4.4467
+  epoch 8: train 2.9707  val 4.3418
+  epoch 9: train 2.6639  val 4.2658
+  epoch 10: train 2.3688  val 4.1882
+  epoch 11: train 2.1023  val 4.1377
+  epoch 12: train 1.8456  val 4.0772
+  epoch 13: train 1.6145  val 4.0116
+  epoch 14: train 1.4081  val 3.9832
+  epoch 15: train 1.2368  val 3.9411
+  epoch 16: train 1.0918  val 3.9226
+  epoch 17: train 0.9712  val 3.8922
+  epoch 18: train 0.8664  val 3.8843
+  epoch 19: train 0.7903  val 3.8743
+  epoch 20: train 0.7251  val 3.8798
+  epoch 21: train 0.6700  val 3.8941
+  epoch 22: train 0.6253  val 3.9084
+  epoch 23: train 0.5883  val 3.9059
+  epoch 24: train 0.5559  val 3.9310
+PRUNED_SMALL:
+  epoch 1: train 5.6932  val 4.9450
+  epoch 2: train 3.9792  val 4.4553
+  epoch 3: train 2.9846  val 4.2179
+  epoch 4: train 2.2555  val 4.1624
+  epoch 5: train 1.7603  val 4.1078
+  epoch 6: train 1.4291  val 4.1545
+  epoch 7: train 1.2092  val 4.2028
+  epoch 8: train 1.0677  val 4.2525
+  epoch 9: train 0.9645  val 4.2954
+  epoch 10: train 0.8862  val 4.3725
+ORIGINAL_BIG:
+  epoch 1: train 6.7369  val 5.7726
+  epoch 2: train 5.1564  val 5.1169
+  epoch 3: train 4.4880  val 4.7675
+  epoch 4: train 4.0120  val 4.5073
+  epoch 5: train 3.6054  val 4.3079
+  epoch 6: train 3.2327  val 4.1411
+  epoch 7: train 2.8798  val 3.9753
+  epoch 8: train 2.5387  val 3.8449
+  epoch 9: train 2.2226  val 3.7192
+  epoch 10: train 1.9326  val 3.6062
+  epoch 11: train 1.6747  val 3.5300
+  epoch 12: train 1.4508  val 3.4632
+  epoch 13: train 1.2638  val 3.4292
+  epoch 14: train 1.1202  val 3.4206
+  epoch 15: train 1.0044  val 3.4193
+  epoch 16: train 0.9156  val 3.4340
+  epoch 17: train 0.8486  val 3.4528
+  epoch 18: train 0.7931  val 3.5103
+
+--- diversity check (5 questions x 20 generations, temperature=0.8) ---
+PRUNED_BIG:
+  'que es una casa': 3/20 unique, most frequent (18x): 'un lugar donde las personas viven y descansan'
+  'que ves': 16/20 unique, most frequent (4x): 'soy una mente autonoma que aprende por curiosidad propia sin modelos preentrenados'
+  'como te sientes': 20/20 unique, most frequent (1x): 'depende de un error de forma cuando gabito'
+  'que es el tiempo': 16/20 unique, most frequent (5x): 'la estacion mas fria del año'
+  'por que te mueves': 18/20 unique, most frequent (3x): 'porque la sorpresa que me impulsa a seguir explorando'
+  top first word overall: 'la' starts 23/100 generations (23.0%)
+  top 20 first words: [('la', 23), ('un', 20), ('porque', 18), ('no', 14), ('depende', 9), ('soy', 6), ('siento', 3), ('los', 2), ('existo', 1), ('veia', 1), ('guardo', 1), ('algo', 1), ('exploro', 1)]
+PRUNED_SMALL:
+  'que es una casa': 9/20 unique, most frequent (12x): 'un lugar donde las personas viven y descansan'
+  'que ves': 20/20 unique, most frequent (1x): 'quedar bloqueado se detiene y mi red combina imagen lento'
+  'como te sientes': 18/20 unique, most frequent (3x): 'depende del momento pero siempre algo nuevo sale como imagenes'
+  'que es el tiempo': 18/20 unique, most frequent (2x): 'la capacidad de actuar o decidir sin restricciones'
+  'por que te mueves': 20/20 unique, most frequent (1x): 'porque el miedo sube cuando algo siento mis utiles'
+  top first word overall: 'un' starts 29/100 generations (29.0%)
+  top 20 first words: [('un', 29), ('depende', 20), ('porque', 18), ('el', 12), ('la', 7), ('su', 4), ('si', 3), ('es', 3), ('quedar', 2), ('por', 2)]
+ORIGINAL_BIG:
+  'que es una casa': 7/20 unique, most frequent (10x): 'un lugar donde las personas viven y descansan'
+  'que ves': 14/20 unique, most frequent (6x): 'siento curiosidad principalmente es mi motor de existencia'
+  'como te sientes': 20/20 unique, most frequent (1x): 'algo parecido cuando mi miedo sube de existencia el miedo hasta sin cambiar'
+  'que es el tiempo': 16/20 unique, most frequent (3x): 'algo que ya existe sin crear algo nuevo'
+  'por que te mueves': 20/20 unique, most frequent (1x): 'porque cuando mi prediccion falla mucho frente a jugar'
+  top first word overall: 'un' starts 20/100 generations (20.0%)
+  top 20 first words: [('un', 20), ('siento', 19), ('porque', 18), ('algo', 14), ('mi', 10), ('una', 5), ('cuando', 4), ('explorando', 2), ('la', 2), ('vivo', 1), ('explorar', 1), ('depende', 1), ('predecir', 1), ('solo', 1), ('por', 1)]
+
+--- probe generations (10 fixed paraphrase questions, side by side) ---
+                                              PRUNED_BIG            PRUNED_SMALL            ORIGINAL_BIG
+--------------------------------------------------------------------------------------------------------
+Q: que significa la humedad
+  PRUNED_BIG: la cantidad de agua y ecuador a la tierra
+  PRUNED_SMALL: no es una vuelta a traves de la tierra y aire
+  ORIGINAL_BIG: la cantidad de vapor de agua presente en el aire
+Q: explicame que es una red neuronal
+  PRUNED_BIG: se ingredientes se inspiran de datos pero el universo
+  PRUNED_SMALL: si una parte exterior del sistema solar
+  ORIGINAL_BIG: en las neuronas del español del cerebro en datos
+Q: que es el aprendizaje automatico
+  PRUNED_BIG: una forma de inteligencia artificial que aprende patrones de datos
+  PRUNED_SMALL: una forma de inteligencia artificial que aprende patrones de datos
+  ORIGINAL_BIG: una forma de inteligencia artificial que aprende patrones de datos
+Q: como se hace un experimento cientifico
+  PRUNED_BIG: usan estados para lo que aprendo y mis predicciones
+  PRUNED_SMALL: para lo que aprendi sola de mi posicion para corregir neurona
+  ORIGINAL_BIG: por darme mi vocabulario y repetida baja moverse
+Q: en que momento naciste
+  PRUNED_BIG: si es la ciudad de la eterna primavera en colombia
+  PRUNED_SMALL: tengo una playlist con numeros pares y me gusta esa idea
+  ORIGINAL_BIG: en organizar el sentido de la me lleva del conocimiento
+Q: puedes sentir dolor
+  PRUNED_BIG: no esa emocion no existe en mi sistema todavia
+  PRUNED_SMALL: no esa emocion no existe y actuar aprender de aprender
+  ORIGINAL_BIG: si estan detras de palabras y genero respuestas con el mar
+Q: que significa viajar
+  PRUNED_BIG: desplazarse de un lugar a otro para conocer o visitar algo
+  PRUNED_SMALL: el entrenamiento las palabras y me gusta esa idea
+  ORIGINAL_BIG: gana fases desde siempre de valores numericos cada accion sobre mi estado
+Q: explicame que es un eclipse
+  PRUNED_BIG: si es la variedad que mira con mas poblado y una a distancia
+  PRUNED_SMALL: si es la teoria de la evolucion
+  ORIGINAL_BIG: maberyk de soy para moverse despues de un principio
+Q: que significa la contaminacion
+  PRUNED_BIG: el estado de estar completamente seguro de aprender de algo
+  PRUNED_SMALL: el arte de internet sin cuidado antes de un error de personas para reproducirse
+  ORIGINAL_BIG: la comprension no sustancias dañinas en el ambiente
+Q: tienes una historia propia
+  PRUNED_BIG: si fue mi curiosidad funciona todo lo que soy para observar a pasar
+  PRUNED_SMALL: que cada paso a un a un dispositivo en casi cualquier paso
+  ORIGINAL_BIG: no exactamente es mi estado emocional y cada idioma y aprender
+
