@@ -1,14 +1,37 @@
-# Checkpoints — grandes y privados, viven en Google Drive
-agent_state.pt
-agent_state_migrated.pt
-episodic_memory.sqlite3
+# Checkpoints - grandes y privados, viven en Google Drive
+*.pt
+*.pth
 
-# Backups generados por scripts/backup.py
-backups/
+# Bases de datos - memoria real y log de permisos
+*.sqlite3
+*.db
 
-# Credenciales — NUNCA al repo
+# Credenciales - NUNCA al repo
+.env
+.env.*
+!.env.example
 google_credentials.json
-*.json
+
+# Entorno virtual (vive dentro de entorno/, junto al codigo)
+entorno/Lib/
+entorno/Scripts/
+entorno/Include/
+entorno/share/
+entorno/pyvenv.cfg
+venv/
+.venv/
+
+# Backups y temporales
+backups/
+temp_colab/
+*.zip
+*.log
+
+# Datos de lectura - texto de terceros fuera, mediciones propias dentro
+datos_lectura/*
+!datos_lectura/coverage.txt
+!datos_lectura/coverage_clean.txt
+!datos_lectura/wiki_titles.txt
 
 # Reportes generados
 analisis/report.html
@@ -17,7 +40,6 @@ analisis/report.html
 __pycache__/
 *.pyc
 *.pyo
-.env
 
 # Windows
 Thumbs.db
@@ -25,9 +47,6 @@ desktop.ini
 
 # VS Code
 .vscode/
-.gitignore
 
-datos_lectura/
-!datos_lectura/wiki_titles.txt
-
-language_model_*.pt
+# Service accounts de Google Cloud
+solar-dialect-*.json
