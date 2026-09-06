@@ -185,5 +185,3 @@ Python Â· PyTorch (puro, sin modelos preentrenados) Â· SQLite Â· stdlib pa
 
 En desarrollo activo. El nÃºcleo funciona de punta a punta: el agente corre, aprende, conversa, persiste estado y actÃºa sobre el escritorio bajo permisos explÃ­citos. El modelo de lenguaje nativo tiene el techo documentado arriba.
 
-## Licencia
-
