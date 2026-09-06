@@ -50,3 +50,6 @@ desktop.ini
 
 # Service accounts de Google Cloud
 solar-dialect-*.json
+
+# Config local del editor
+.claude/
