@@ -1,0 +1,944 @@
+source directory: C:\Users\ADMIN\Proyectos\agente_base\datos_lectura\clean
+
+current vocabulary loaded from: C:\Users\ADMIN\Proyectos\agente_base\language_model.pt
+current vocabulary size (incl. special tokens): 5136
+
+=== VOCAB PUNCTUATION SPOT-CHECK ===
+20 random current-vocab tokens: ['comparo', 'alimento', 'gastronomia', 'experienced', 'escapa', 'correctamente', 'clic', 'social', 'cariño', 'twitch', 'osos', 'andres', 'ambiente', 'cena', 'enviarlos', 'estabilizarse', 'reproducirse', 'vallenato', 'already', 'takes']
+0/20 sampled tokens contain punctuation characters ('.,;:!?¿¡"\'«»()—–…')
+full-vocab scan (not just the sample above): 24/5131 content words (0.47%) contain punctuation
+  examples from the full scan: ['"bacano"', '"chimba"', '"como', '"marica"', '"musica', '"parce"', '"que', 'aprende:', 'aprender,', "bell's", 'cambiarla,', 'colombiana"', 'curiosidad"', 'curiosidad,', 'happen?']
+Authoritative measure: RAW. brain/language_model.py never strips punctuation anywhere in the corpus-to-vocab path — _load_training_samples' corpus_agente.txt block (lines 326-332) and _collect_vocabulary (lines 347-351) both just normalize_text() + str.lower().split(). The full-vocab scan above confirms this: punctuation-bearing tokens exist in the trained vocabulary itself, so training genuinely does not strip it — RAW is what the model sees today. STRIPPED and NO-NUMERIC are diagnostic only: they show the coverage a punctuation-aware preprocessing step would buy if one were ever added, not what happens now. (Punctuation-bearing tokens are a small share of the vocab — 0.47% — so a 20-token random sample can easily land on zero hits even though the full scan shows they exist; that is why this conclusion is based on the full scan, not the sample alone.)
+
+=== ALL FILES COMBINED ===
+numeric tokens (after stripping): 6076 (0.63% of STRIPPED total)
+
+--- ALL FILES COMBINED [RAW] ---
+total tokens: 957248
+unique word types: 63122
+token-level coverage vs current vocab: 71.56%
+type-level coverage vs current vocab: 6.67%
+OOV rate (tokens not in current vocab): 28.44%
+vocab size needed for 95% token coverage (own-text ranking): 22932
+vocab size needed for 99% token coverage (own-text ranking): 53550
+OOV types that are hapax (count == 1): 54.71%
+top 50 most frequent OOV words:
+  estos: 961
+  esto: 797
+  guerra: 631
+  %: 631
+  diferentes: 590
+  embargo: 578
+  hombre: 555
+  mediante: 532
+  eran: 503
+  tenia: 457
+  campo: 410
+  desnoyers: 409
+  habian: 389
+  usted: 384
+  etc: 367
+  hombres: 344
+  iba: 312
+  lado: 307
+  madera: 304
+  mujer: 304
+  menor: 302
+  ante: 297
+  pues: 294
+  grupos: 289
+  modo: 285
+  helio: 276
+  cuales: 272
+  don: 271
+  utiliza: 267
+  tales: 265
+  generalmente: 254
+  termino: 252
+  compuestos: 247
+  000: 245
+  1: 245
+  primeros: 240
+  media: 240
+  encuentran: 237
+  poblacion: 234
+  mujeres: 227
+  consumo: 227
+  utilizan: 226
+  aquel: 223
+  estaban: 222
+  especialmente: 219
+  vio: 213
+  aluminio: 213
+  resistencia: 209
+  mamiferos: 206
+  hijo: 204
+
+--- ALL FILES COMBINED [STRIPPED] ---
+total tokens: 957248
+unique word types: 63122
+token-level coverage vs current vocab: 71.56%
+type-level coverage vs current vocab: 6.67%
+OOV rate (tokens not in current vocab): 28.44%
+vocab size needed for 95% token coverage (own-text ranking): 22932
+vocab size needed for 99% token coverage (own-text ranking): 53550
+OOV types that are hapax (count == 1): 54.71%
+top 50 most frequent OOV words:
+  estos: 961
+  esto: 797
+  guerra: 631
+  %: 631
+  diferentes: 590
+  embargo: 578
+  hombre: 555
+  mediante: 532
+  eran: 503
+  tenia: 457
+  campo: 410
+  desnoyers: 409
+  habian: 389
+  usted: 384
+  etc: 367
+  hombres: 344
+  iba: 312
+  lado: 307
+  madera: 304
+  mujer: 304
+  menor: 302
+  ante: 297
+  pues: 294
+  grupos: 289
+  modo: 285
+  helio: 276
+  cuales: 272
+  don: 271
+  utiliza: 267
+  tales: 265
+  generalmente: 254
+  termino: 252
+  compuestos: 247
+  000: 245
+  1: 245
+  primeros: 240
+  media: 240
+  encuentran: 237
+  poblacion: 234
+  mujeres: 227
+  consumo: 227
+  utilizan: 226
+  aquel: 223
+  estaban: 222
+  especialmente: 219
+  vio: 213
+  aluminio: 213
+  resistencia: 209
+  mamiferos: 206
+  hijo: 204
+
+--- ALL FILES COMBINED [NO-NUMERIC] ---
+total tokens: 951172
+unique word types: 62250
+token-level coverage vs current vocab: 72.01%
+type-level coverage vs current vocab: 6.76%
+OOV rate (tokens not in current vocab): 27.99%
+vocab size needed for 95% token coverage (own-text ranking): 22401
+vocab size needed for 99% token coverage (own-text ranking): 52739
+OOV types that are hapax (count == 1): 54.87%
+top 50 most frequent OOV words:
+  estos: 961
+  esto: 797
+  guerra: 631
+  %: 631
+  diferentes: 590
+  embargo: 578
+  hombre: 555
+  mediante: 532
+  eran: 503
+  tenia: 457
+  campo: 410
+  desnoyers: 409
+  habian: 389
+  usted: 384
+  etc: 367
+  hombres: 344
+  iba: 312
+  lado: 307
+  madera: 304
+  mujer: 304
+  menor: 302
+  ante: 297
+  pues: 294
+  grupos: 289
+  modo: 285
+  helio: 276
+  cuales: 272
+  don: 271
+  utiliza: 267
+  tales: 265
+  generalmente: 254
+  termino: 252
+  compuestos: 247
+  primeros: 240
+  media: 240
+  encuentran: 237
+  poblacion: 234
+  mujeres: 227
+  consumo: 227
+  utilizan: 226
+  aquel: 223
+  estaban: 222
+  especialmente: 219
+  vio: 213
+  aluminio: 213
+  resistencia: 209
+  mamiferos: 206
+  hijo: 204
+  llamado: 204
+  °c: 202
+
+=== PER SOURCE FILE ===
+
+=== el_arbol_de_la_ciencia.txt ===
+numeric tokens (after stripping): 37 (0.06% of STRIPPED total)
+
+--- el_arbol_de_la_ciencia.txt [RAW] ---
+total tokens: 61330
+unique word types: 9329
+token-level coverage vs current vocab: 71.41%
+type-level coverage vs current vocab: 20.50%
+OOV rate (tokens not in current vocab): 28.59%
+vocab size needed for 95% token coverage (own-text ranking): 6263
+vocab size needed for 99% token coverage (own-text ranking): 8716
+OOV types that are hapax (count == 1): 67.35%
+top 50 most frequent OOV words:
+  usted: 261
+  tenia: 177
+  hombre: 169
+  lulu: 148
+  hurtado: 146
+  mujer: 115
+  don: 114
+  iba: 77
+  decia: 68
+  aracil: 62
+  aquel: 60
+  eran: 57
+  daba: 52
+  mujeres: 52
+  esto: 51
+  padre: 51
+  doña: 50
+  cuarto: 49
+  iturrioz: 49
+  margarita: 44
+  tio: 44
+  estos: 43
+  aquella: 42
+  alcolea: 42
+  madrid: 40
+  pues: 40
+  parecia: 40
+  hombres: 39
+  pedro: 39
+  pobre: 37
+  alguna: 37
+  hubiera: 37
+  clase: 36
+  montaner: 36
+  luisito: 36
+  pasaba: 35
+  encontraba: 34
+  comenzo: 33
+  fondo: 33
+  leonarda: 33
+  hermano: 32
+  andres--: 32
+  hijo: 31
+  esos: 31
+  señor: 30
+  esas: 30
+  señora: 30
+  vivia: 29
+  sanchez: 29
+  nini: 29
+
+--- el_arbol_de_la_ciencia.txt [STRIPPED] ---
+total tokens: 61330
+unique word types: 9329
+token-level coverage vs current vocab: 71.41%
+type-level coverage vs current vocab: 20.50%
+OOV rate (tokens not in current vocab): 28.59%
+vocab size needed for 95% token coverage (own-text ranking): 6263
+vocab size needed for 99% token coverage (own-text ranking): 8716
+OOV types that are hapax (count == 1): 67.35%
+top 50 most frequent OOV words:
+  usted: 261
+  tenia: 177
+  hombre: 169
+  lulu: 148
+  hurtado: 146
+  mujer: 115
+  don: 114
+  iba: 77
+  decia: 68
+  aracil: 62
+  aquel: 60
+  eran: 57
+  daba: 52
+  mujeres: 52
+  esto: 51
+  padre: 51
+  doña: 50
+  cuarto: 49
+  iturrioz: 49
+  margarita: 44
+  tio: 44
+  estos: 43
+  aquella: 42
+  alcolea: 42
+  madrid: 40
+  pues: 40
+  parecia: 40
+  hombres: 39
+  pedro: 39
+  pobre: 37
+  alguna: 37
+  hubiera: 37
+  clase: 36
+  montaner: 36
+  luisito: 36
+  pasaba: 35
+  encontraba: 34
+  comenzo: 33
+  fondo: 33
+  leonarda: 33
+  hermano: 32
+  andres--: 32
+  hijo: 31
+  esos: 31
+  señor: 30
+  esas: 30
+  señora: 30
+  vivia: 29
+  sanchez: 29
+  nini: 29
+
+--- el_arbol_de_la_ciencia.txt [NO-NUMERIC] ---
+total tokens: 61293
+unique word types: 9292
+token-level coverage vs current vocab: 71.45%
+type-level coverage vs current vocab: 20.56%
+OOV rate (tokens not in current vocab): 28.55%
+vocab size needed for 95% token coverage (own-text ranking): 6228
+vocab size needed for 99% token coverage (own-text ranking): 8680
+OOV types that are hapax (count == 1): 67.19%
+top 50 most frequent OOV words:
+  usted: 261
+  tenia: 177
+  hombre: 169
+  lulu: 148
+  hurtado: 146
+  mujer: 115
+  don: 114
+  iba: 77
+  decia: 68
+  aracil: 62
+  aquel: 60
+  eran: 57
+  daba: 52
+  mujeres: 52
+  esto: 51
+  padre: 51
+  doña: 50
+  cuarto: 49
+  iturrioz: 49
+  margarita: 44
+  tio: 44
+  estos: 43
+  aquella: 42
+  alcolea: 42
+  madrid: 40
+  pues: 40
+  parecia: 40
+  hombres: 39
+  pedro: 39
+  pobre: 37
+  alguna: 37
+  hubiera: 37
+  clase: 36
+  montaner: 36
+  luisito: 36
+  pasaba: 35
+  encontraba: 34
+  comenzo: 33
+  fondo: 33
+  leonarda: 33
+  hermano: 32
+  andres--: 32
+  hijo: 31
+  esos: 31
+  señor: 30
+  esas: 30
+  señora: 30
+  vivia: 29
+  sanchez: 29
+  nini: 29
+
+=== quiroga_cuentos.txt ===
+numeric tokens (after stripping): 37 (0.08% of STRIPPED total)
+
+--- quiroga_cuentos.txt [RAW] ---
+total tokens: 48065
+unique word types: 8552
+token-level coverage vs current vocab: 68.96%
+type-level coverage vs current vocab: 19.24%
+OOV rate (tokens not in current vocab): 31.04%
+vocab size needed for 95% token coverage (own-text ranking): 6149
+vocab size needed for 99% token coverage (own-text ranking): 8072
+OOV types that are hapax (count == 1): 68.84%
+top 50 most frequent OOV words:
+  nebel: 104
+  maria: 86
+  hombre: 73
+  mujer: 65
+  tenia: 64
+  usted: 63
+  esto: 63
+  mama: 54
+  monte: 50
+  lidia: 49
+  lado: 48
+  rato: 46
+  aquel: 45
+  miro: 42
+  pues: 42
+  mirada: 41
+  habian: 39
+  seguida: 38
+  ante: 37
+  iba: 37
+  pronto: 37
+  modo: 36
+  caballos: 36
+  aquella: 35
+  volvio: 35
+  vio: 33
+  ah: 32
+  embargo: 32
+  mister: 32
+  elvira: 32
+  kassim: 30
+  hubiera: 27
+  dicha: 27
+  cama: 27
+  toro: 27
+  caye: 26
+  hijo: 25
+  menor: 25
+  podeley: 25
+  mensu: 24
+  marido: 23
+  pudo: 23
+  yaguai: 23
+  vd: 23
+  sintio: 22
+  fondo: 22
+  vacas: 22
+  malacara: 22
+  llego: 21
+  cuarto: 21
+
+--- quiroga_cuentos.txt [STRIPPED] ---
+total tokens: 48065
+unique word types: 8552
+token-level coverage vs current vocab: 68.96%
+type-level coverage vs current vocab: 19.24%
+OOV rate (tokens not in current vocab): 31.04%
+vocab size needed for 95% token coverage (own-text ranking): 6149
+vocab size needed for 99% token coverage (own-text ranking): 8072
+OOV types that are hapax (count == 1): 68.84%
+top 50 most frequent OOV words:
+  nebel: 104
+  maria: 86
+  hombre: 73
+  mujer: 65
+  tenia: 64
+  usted: 63
+  esto: 63
+  mama: 54
+  monte: 50
+  lidia: 49
+  lado: 48
+  rato: 46
+  aquel: 45
+  miro: 42
+  pues: 42
+  mirada: 41
+  habian: 39
+  seguida: 38
+  ante: 37
+  iba: 37
+  pronto: 37
+  modo: 36
+  caballos: 36
+  aquella: 35
+  volvio: 35
+  vio: 33
+  ah: 32
+  embargo: 32
+  mister: 32
+  elvira: 32
+  kassim: 30
+  hubiera: 27
+  dicha: 27
+  cama: 27
+  toro: 27
+  caye: 26
+  hijo: 25
+  menor: 25
+  podeley: 25
+  mensu: 24
+  marido: 23
+  pudo: 23
+  yaguai: 23
+  vd: 23
+  sintio: 22
+  fondo: 22
+  vacas: 22
+  malacara: 22
+  llego: 21
+  cuarto: 21
+
+--- quiroga_cuentos.txt [NO-NUMERIC] ---
+total tokens: 48028
+unique word types: 8527
+token-level coverage vs current vocab: 69.00%
+type-level coverage vs current vocab: 19.28%
+OOV rate (tokens not in current vocab): 31.00%
+vocab size needed for 95% token coverage (own-text ranking): 6126
+vocab size needed for 99% token coverage (own-text ranking): 8047
+OOV types that are hapax (count == 1): 68.81%
+top 50 most frequent OOV words:
+  nebel: 104
+  maria: 86
+  hombre: 73
+  mujer: 65
+  tenia: 64
+  usted: 63
+  esto: 63
+  mama: 54
+  monte: 50
+  lidia: 49
+  lado: 48
+  rato: 46
+  aquel: 45
+  miro: 42
+  pues: 42
+  mirada: 41
+  habian: 39
+  seguida: 38
+  ante: 37
+  iba: 37
+  pronto: 37
+  modo: 36
+  caballos: 36
+  aquella: 35
+  volvio: 35
+  vio: 33
+  ah: 32
+  embargo: 32
+  mister: 32
+  elvira: 32
+  kassim: 30
+  hubiera: 27
+  dicha: 27
+  cama: 27
+  toro: 27
+  caye: 26
+  hijo: 25
+  menor: 25
+  podeley: 25
+  mensu: 24
+  marido: 23
+  pudo: 23
+  yaguai: 23
+  vd: 23
+  sintio: 22
+  fondo: 22
+  vacas: 22
+  malacara: 22
+  llego: 21
+  cuarto: 21
+
+=== vicente_blasco_los_cuatro_jinetes.txt ===
+numeric tokens (after stripping): 34 (0.03% of STRIPPED total)
+
+--- vicente_blasco_los_cuatro_jinetes.txt [RAW] ---
+total tokens: 129969
+unique word types: 15934
+token-level coverage vs current vocab: 67.06%
+type-level coverage vs current vocab: 15.42%
+OOV rate (tokens not in current vocab): 32.94%
+vocab size needed for 95% token coverage (own-text ranking): 9436
+vocab size needed for 99% token coverage (own-text ranking): 14635
+OOV types that are hapax (count == 1): 56.67%
+top 50 most frequent OOV words:
+  desnoyers: 409
+  habian: 281
+  guerra: 280
+  hombres: 220
+  eran: 205
+  iba: 184
+  paris: 174
+  hombre: 166
+  ante: 159
+  marcelo: 153
+  don: 151
+  hijo: 141
+  vio: 140
+  tenia: 133
+  esto: 131
+  estos: 130
+  estaban: 119
+  padre: 111
+  parecia: 106
+  castillo: 106
+  iban: 104
+  argensola: 104
+  pronto: 104
+  alemanes: 99
+  soldados: 99
+  lado: 98
+  aleman: 91
+  mujeres: 89
+  alemania: 83
+  mujer: 83
+  señor: 78
+  doña: 73
+  margarita: 72
+  enemigos: 70
+  parecian: 70
+  chichi: 70
+  pobre: 67
+  aquel: 63
+  frances: 62
+  sintio: 62
+  gesto: 61
+  luisa: 60
+  gentes: 59
+  usted: 58
+  campo: 57
+  fuese: 57
+  enemigo: 56
+  madariaga: 55
+  torno: 55
+  franceses: 55
+
+--- vicente_blasco_los_cuatro_jinetes.txt [STRIPPED] ---
+total tokens: 129969
+unique word types: 15934
+token-level coverage vs current vocab: 67.06%
+type-level coverage vs current vocab: 15.42%
+OOV rate (tokens not in current vocab): 32.94%
+vocab size needed for 95% token coverage (own-text ranking): 9436
+vocab size needed for 99% token coverage (own-text ranking): 14635
+OOV types that are hapax (count == 1): 56.67%
+top 50 most frequent OOV words:
+  desnoyers: 409
+  habian: 281
+  guerra: 280
+  hombres: 220
+  eran: 205
+  iba: 184
+  paris: 174
+  hombre: 166
+  ante: 159
+  marcelo: 153
+  don: 151
+  hijo: 141
+  vio: 140
+  tenia: 133
+  esto: 131
+  estos: 130
+  estaban: 119
+  padre: 111
+  parecia: 106
+  castillo: 106
+  iban: 104
+  argensola: 104
+  pronto: 104
+  alemanes: 99
+  soldados: 99
+  lado: 98
+  aleman: 91
+  mujeres: 89
+  alemania: 83
+  mujer: 83
+  señor: 78
+  doña: 73
+  margarita: 72
+  enemigos: 70
+  parecian: 70
+  chichi: 70
+  pobre: 67
+  aquel: 63
+  frances: 62
+  sintio: 62
+  gesto: 61
+  luisa: 60
+  gentes: 59
+  usted: 58
+  campo: 57
+  fuese: 57
+  enemigo: 56
+  madariaga: 55
+  torno: 55
+  franceses: 55
+
+--- vicente_blasco_los_cuatro_jinetes.txt [NO-NUMERIC] ---
+total tokens: 129935
+unique word types: 15923
+token-level coverage vs current vocab: 67.08%
+type-level coverage vs current vocab: 15.43%
+OOV rate (tokens not in current vocab): 32.92%
+vocab size needed for 95% token coverage (own-text ranking): 9427
+vocab size needed for 99% token coverage (own-text ranking): 14624
+OOV types that are hapax (count == 1): 56.67%
+top 50 most frequent OOV words:
+  desnoyers: 409
+  habian: 281
+  guerra: 280
+  hombres: 220
+  eran: 205
+  iba: 184
+  paris: 174
+  hombre: 166
+  ante: 159
+  marcelo: 153
+  don: 151
+  hijo: 141
+  vio: 140
+  tenia: 133
+  esto: 131
+  estos: 130
+  estaban: 119
+  padre: 111
+  parecia: 106
+  castillo: 106
+  iban: 104
+  argensola: 104
+  pronto: 104
+  alemanes: 99
+  soldados: 99
+  lado: 98
+  aleman: 91
+  mujeres: 89
+  alemania: 83
+  mujer: 83
+  señor: 78
+  doña: 73
+  margarita: 72
+  enemigos: 70
+  parecian: 70
+  chichi: 70
+  pobre: 67
+  aquel: 63
+  frances: 62
+  sintio: 62
+  gesto: 61
+  luisa: 60
+  gentes: 59
+  usted: 58
+  campo: 57
+  fuese: 57
+  enemigo: 56
+  madariaga: 55
+  torno: 55
+  franceses: 55
+
+=== wikipedia_es.txt ===
+numeric tokens (after stripping): 5968 (0.83% of STRIPPED total)
+
+--- wikipedia_es.txt [RAW] ---
+total tokens: 717884
+unique word types: 49532
+token-level coverage vs current vocab: 72.56%
+type-level coverage vs current vocab: 8.02%
+OOV rate (tokens not in current vocab): 27.44%
+vocab size needed for 95% token coverage (own-text ranking): 18605
+vocab size needed for 99% token coverage (own-text ranking): 42354
+OOV types that are hapax (count == 1): 56.21%
+top 50 most frequent OOV words:
+  estos: 780
+  %: 631
+  diferentes: 588
+  esto: 552
+  mediante: 531
+  embargo: 505
+  etc: 365
+  guerra: 341
+  campo: 318
+  madera: 278
+  helio: 276
+  utiliza: 267
+  cuales: 266
+  generalmente: 247
+  000: 245
+  1: 245
+  compuestos: 245
+  menor: 242
+  grupos: 239
+  termino: 236
+  tales: 235
+  encuentran: 232
+  eran: 229
+  poblacion: 226
+  utilizan: 226
+  consumo: 225
+  especialmente: 215
+  aluminio: 213
+  modo: 209
+  mamiferos: 206
+  °c: 202
+  primeros: 200
+  vidrio: 196
+  pues: 191
+  llamado: 190
+  denomina: 188
+  resistencia: 188
+  media: 186
+  respecto: 186
+  fibras: 182
+  distribucion: 181
+  poseen: 173
+  densidad: 172
+  2: 171
+  presenta: 169
+  areas: 167
+  receptores: 166
+  acido: 164
+  menudo: 163
+  presentan: 161
+
+--- wikipedia_es.txt [STRIPPED] ---
+total tokens: 717884
+unique word types: 49532
+token-level coverage vs current vocab: 72.56%
+type-level coverage vs current vocab: 8.02%
+OOV rate (tokens not in current vocab): 27.44%
+vocab size needed for 95% token coverage (own-text ranking): 18605
+vocab size needed for 99% token coverage (own-text ranking): 42354
+OOV types that are hapax (count == 1): 56.21%
+top 50 most frequent OOV words:
+  estos: 780
+  %: 631
+  diferentes: 588
+  esto: 552
+  mediante: 531
+  embargo: 505
+  etc: 365
+  guerra: 341
+  campo: 318
+  madera: 278
+  helio: 276
+  utiliza: 267
+  cuales: 266
+  generalmente: 247
+  000: 245
+  1: 245
+  compuestos: 245
+  menor: 242
+  grupos: 239
+  termino: 236
+  tales: 235
+  encuentran: 232
+  eran: 229
+  poblacion: 226
+  utilizan: 226
+  consumo: 225
+  especialmente: 215
+  aluminio: 213
+  modo: 209
+  mamiferos: 206
+  °c: 202
+  primeros: 200
+  vidrio: 196
+  pues: 191
+  llamado: 190
+  denomina: 188
+  resistencia: 188
+  media: 186
+  respecto: 186
+  fibras: 182
+  distribucion: 181
+  poseen: 173
+  densidad: 172
+  2: 171
+  presenta: 169
+  areas: 167
+  receptores: 166
+  acido: 164
+  menudo: 163
+  presentan: 161
+
+--- wikipedia_es.txt [NO-NUMERIC] ---
+total tokens: 711916
+unique word types: 48678
+token-level coverage vs current vocab: 73.16%
+type-level coverage vs current vocab: 8.15%
+OOV rate (tokens not in current vocab): 26.84%
+vocab size needed for 95% token coverage (own-text ranking): 18085
+vocab size needed for 99% token coverage (own-text ranking): 41559
+OOV types that are hapax (count == 1): 56.45%
+top 50 most frequent OOV words:
+  estos: 780
+  %: 631
+  diferentes: 588
+  esto: 552
+  mediante: 531
+  embargo: 505
+  etc: 365
+  guerra: 341
+  campo: 318
+  madera: 278
+  helio: 276
+  utiliza: 267
+  cuales: 266
+  generalmente: 247
+  compuestos: 245
+  menor: 242
+  grupos: 239
+  termino: 236
+  tales: 235
+  encuentran: 232
+  eran: 229
+  poblacion: 226
+  utilizan: 226
+  consumo: 225
+  especialmente: 215
+  aluminio: 213
+  modo: 209
+  mamiferos: 206
+  °c: 202
+  primeros: 200
+  vidrio: 196
+  pues: 191
+  llamado: 190
+  denomina: 188
+  resistencia: 188
+  media: 186
+  respecto: 186
+  fibras: 182
+  distribucion: 181
+  poseen: 173
+  densidad: 172
+  presenta: 169
+  areas: 167
+  receptores: 166
+  acido: 164
+  menudo: 163
+  presentan: 161
+  pobreza: 161
+  magnetico: 156
+  factores: 153
+

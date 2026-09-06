@@ -1,0 +1,570 @@
+current vocabulary loaded from: C:\Users\ADMIN\Proyectos\agente_base\language_model.pt
+current vocabulary size (incl. special tokens): 5136
+
+=== VOCAB PUNCTUATION SPOT-CHECK ===
+20 random current-vocab tokens: ['comparo', 'alimento', 'gastronomia', 'experienced', 'escapa', 'correctamente', 'clic', 'social', 'cariño', 'twitch', 'osos', 'andres', 'ambiente', 'cena', 'enviarlos', 'estabilizarse', 'reproducirse', 'vallenato', 'already', 'takes']
+0/20 sampled tokens contain punctuation characters ('.,;:!?¿¡"\'«»()—–…')
+full-vocab scan (not just the sample above): 24/5131 content words (0.47%) contain punctuation
+  examples from the full scan: ['"bacano"', '"chimba"', '"como', '"marica"', '"musica', '"parce"', '"que', 'aprende:', 'aprender,', "bell's", 'cambiarla,', 'colombiana"', 'curiosidad"', 'curiosidad,', 'happen?']
+Authoritative measure: RAW. brain/language_model.py never strips punctuation anywhere in the corpus-to-vocab path — _load_training_samples' corpus_agente.txt block (lines 326-332) and _collect_vocabulary (lines 347-351) both just normalize_text() + str.lower().split(). The full-vocab scan above confirms this: punctuation-bearing tokens exist in the trained vocabulary itself, so training genuinely does not strip it — RAW is what the model sees today. STRIPPED and NO-NUMERIC are diagnostic only: they show the coverage a punctuation-aware preprocessing step would buy if one were ever added, not what happens now. (Punctuation-bearing tokens are a small share of the vocab — 0.47% — so a 20-token random sample can easily land on zero hits even though the full scan shows they exist; that is why this conclusion is based on the full scan, not the sample alone.)
+
+=== ALL FILES COMBINED ===
+numeric tokens (after stripping): 850 (0.54% of STRIPPED total)
+
+--- ALL FILES COMBINED [RAW] ---
+total tokens: 156758
+unique word types: 31121
+token-level coverage vs current vocab: 65.12%
+type-level coverage vs current vocab: 10.48%
+OOV rate (tokens not in current vocab): 34.88%
+vocab size needed for 95% token coverage (own-text ranking): 23284
+vocab size needed for 99% token coverage (own-text ranking): 29554
+OOV types that are hapax (count == 1): 70.68%
+top 50 most frequent OOV words:
+  *: 185
+  esto: 118
+  estos: 110
+  embargo,: 98
+  diferentes: 92
+  project: 83
+  tenia: 77
+  or: 75
+  nebel: 74
+  ante: 69
+  mediante: 69
+  hombre: 68
+  maria: 67
+  ejemplo,: 65
+  gutenberg: 62
+  pues: 60
+  modo: 55
+  habian: 53
+  eran: 51
+  y,: 50
+  mujer: 49
+  que,: 49
+  aquel: 47
+  razas: 46
+  aquella: 43
+  usted: 43
+  miro: 41
+  años,: 41
+  primeros: 41
+  menor: 40
+  dj: 40
+  vio: 38
+  ¿que: 38
+  cuales: 38
+  especialmente: 38
+  volvio: 37
+  expresion: 37
+  termino: 37
+  iba: 36
+  media: 36
+  capaz: 36
+  ademas,: 36
+  etc.: 36
+  any: 36
+  %: 36
+  mirada: 35
+  rato: 35
+  aspectos: 35
+  dicha: 34
+  campo: 34
+
+--- ALL FILES COMBINED [STRIPPED] ---
+total tokens: 156726
+unique word types: 22352
+token-level coverage vs current vocab: 71.22%
+type-level coverage vs current vocab: 15.52%
+OOV rate (tokens not in current vocab): 28.78%
+vocab size needed for 95% token coverage (own-text ranking): 14516
+vocab size needed for 99% token coverage (own-text ranking): 20785
+OOV types that are hapax (count == 1): 63.68%
+top 50 most frequent OOV words:
+  *: 185
+  esto: 160
+  embargo: 119
+  estos: 113
+  nebel: 106
+  diferentes: 106
+  hombre: 96
+  maria: 90
+  project: 83
+  tenia: 81
+  pues: 80
+  or: 78
+  lado: 72
+  mediante: 71
+  ante: 69
+  mujer: 69
+  modo: 66
+  gutenberg: 65
+  usted: 63
+  razas: 57
+  etc: 56
+  mama: 55
+  habian: 53
+  aquel: 52
+  eran: 52
+  monte: 52
+  lidia: 51
+  --no: 51
+  aquella: 49
+  rato: 47
+  dj: 46
+  work: 45
+  %: 45
+  campo: 44
+  seguida: 44
+  mirada: 43
+  --si: 43
+  menor: 43
+  especialmente: 43
+  miro: 42
+  dicha: 42
+  media: 42
+  expresion: 42
+  termino: 42
+  primeros: 41
+  caballos: 41
+  iba: 40
+  volvio: 40
+  raza: 40
+  aspectos: 40
+
+--- ALL FILES COMBINED [NO-NUMERIC] ---
+total tokens: 155876
+unique word types: 22092
+token-level coverage vs current vocab: 71.60%
+type-level coverage vs current vocab: 15.68%
+OOV rate (tokens not in current vocab): 28.40%
+vocab size needed for 95% token coverage (own-text ranking): 14299
+vocab size needed for 99% token coverage (own-text ranking): 20534
+OOV types that are hapax (count == 1): 63.95%
+top 50 most frequent OOV words:
+  *: 185
+  esto: 160
+  embargo: 119
+  estos: 113
+  nebel: 106
+  diferentes: 106
+  hombre: 96
+  maria: 90
+  project: 83
+  tenia: 81
+  pues: 80
+  or: 78
+  lado: 72
+  mediante: 71
+  ante: 69
+  mujer: 69
+  modo: 66
+  gutenberg: 65
+  usted: 63
+  razas: 57
+  etc: 56
+  mama: 55
+  habian: 53
+  aquel: 52
+  eran: 52
+  monte: 52
+  lidia: 51
+  --no: 51
+  aquella: 49
+  rato: 47
+  dj: 46
+  work: 45
+  %: 45
+  campo: 44
+  seguida: 44
+  mirada: 43
+  --si: 43
+  menor: 43
+  especialmente: 43
+  miro: 42
+  dicha: 42
+  media: 42
+  expresion: 42
+  termino: 42
+  primeros: 41
+  caballos: 41
+  iba: 40
+  volvio: 40
+  raza: 40
+  aspectos: 40
+
+=== PER SOURCE FILE ===
+
+=== quiroga_cuentos.txt ===
+numeric tokens (after stripping): 60 (0.11% of STRIPPED total)
+
+--- quiroga_cuentos.txt [RAW] ---
+total tokens: 52351
+unique word types: 13258
+token-level coverage vs current vocab: 58.33%
+type-level coverage vs current vocab: 11.92%
+OOV rate (tokens not in current vocab): 41.67%
+vocab size needed for 95% token coverage (own-text ranking): 10641
+vocab size needed for 99% token coverage (own-text ranking): 12735
+OOV types that are hapax (count == 1): 72.98%
+top 50 most frequent OOV words:
+  *: 185
+  project: 83
+  or: 74
+  nebel: 74
+  maria: 64
+  gutenberg: 62
+  tenia: 61
+  hombre: 57
+  mujer: 47
+  miro: 41
+  aquel: 41
+  usted: 41
+  habian: 39
+  ante: 38
+  ¿que: 38
+  esto: 37
+  rato: 35
+  any: 35
+  mirada: 34
+  iba: 33
+  volvio: 33
+  lidia: 33
+  work: 33
+  vio: 32
+  mister: 32
+  aquella: 31
+  modo: 31
+  pues: 29
+  --no: 29
+  ojos,: 28
+  mama: 28
+  el,: 27
+  hubiera: 27
+  electronic: 27
+  mas.: 26
+  --si,: 26
+  casa,: 26
+  ella,: 25
+  seguida: 25
+  embargo,: 25
+  kassim: 25
+  monte: 25
+  caballos: 25
+  ¡y: 24
+  pronto: 24
+  works: 23
+  terms: 22
+  si,: 22
+  fin,: 22
+  pudo: 22
+
+--- quiroga_cuentos.txt [STRIPPED] ---
+total tokens: 52350
+unique word types: 9628
+token-level coverage vs current vocab: 66.14%
+type-level coverage vs current vocab: 18.48%
+OOV rate (tokens not in current vocab): 33.86%
+vocab size needed for 95% token coverage (own-text ranking): 7011
+vocab size needed for 99% token coverage (own-text ranking): 9105
+OOV types that are hapax (count == 1): 68.03%
+top 50 most frequent OOV words:
+  *: 185
+  nebel: 106
+  maria: 87
+  project: 83
+  or: 77
+  hombre: 74
+  esto: 66
+  gutenberg: 65
+  tenia: 65
+  mujer: 65
+  usted: 61
+  mama: 53
+  lidia: 51
+  --no: 51
+  monte: 50
+  lado: 49
+  rato: 47
+  aquel: 46
+  work: 45
+  --si: 43
+  miro: 42
+  pues: 42
+  mirada: 41
+  habian: 39
+  seguida: 39
+  ante: 38
+  iba: 37
+  pronto: 37
+  caballos: 37
+  any: 37
+  aquella: 36
+  modo: 36
+  volvio: 36
+  elvira: 35
+  vio: 33
+  embargo: 32
+  kassim: 32
+  mister: 32
+  works: 32
+  cama: 29
+  toro: 28
+  hubiera: 27
+  dicha: 27
+  electronic: 27
+  hijo: 26
+  mensu: 25
+  yaguai: 25
+  menor: 25
+  podeley: 25
+  caye: 25
+
+--- quiroga_cuentos.txt [NO-NUMERIC] ---
+total tokens: 52290
+unique word types: 9588
+token-level coverage vs current vocab: 66.20%
+type-level coverage vs current vocab: 18.54%
+OOV rate (tokens not in current vocab): 33.80%
+vocab size needed for 95% token coverage (own-text ranking): 6974
+vocab size needed for 99% token coverage (own-text ranking): 9066
+OOV types that are hapax (count == 1): 68.02%
+top 50 most frequent OOV words:
+  *: 185
+  nebel: 106
+  maria: 87
+  project: 83
+  or: 77
+  hombre: 74
+  esto: 66
+  gutenberg: 65
+  tenia: 65
+  mujer: 65
+  usted: 61
+  mama: 53
+  lidia: 51
+  --no: 51
+  monte: 50
+  lado: 49
+  rato: 47
+  aquel: 46
+  work: 45
+  --si: 43
+  miro: 42
+  pues: 42
+  mirada: 41
+  habian: 39
+  seguida: 39
+  ante: 38
+  iba: 37
+  pronto: 37
+  caballos: 37
+  any: 37
+  aquella: 36
+  modo: 36
+  volvio: 36
+  elvira: 35
+  vio: 33
+  embargo: 32
+  kassim: 32
+  mister: 32
+  works: 32
+  cama: 29
+  toro: 28
+  hubiera: 27
+  dicha: 27
+  electronic: 27
+  hijo: 26
+  mensu: 25
+  yaguai: 25
+  menor: 25
+  podeley: 25
+  caye: 25
+
+=== wikipedia_es.txt ===
+numeric tokens (after stripping): 790 (0.76% of STRIPPED total)
+
+--- wikipedia_es.txt [RAW] ---
+total tokens: 104407
+unique word types: 20703
+token-level coverage vs current vocab: 68.52%
+type-level coverage vs current vocab: 13.74%
+OOV rate (tokens not in current vocab): 31.48%
+vocab size needed for 95% token coverage (own-text ranking): 15483
+vocab size needed for 99% token coverage (own-text ranking): 19659
+OOV types that are hapax (count == 1): 72.21%
+top 50 most frequent OOV words:
+  estos: 103
+  diferentes: 91
+  esto: 81
+  embargo,: 73
+  mediante: 68
+  ejemplo,: 65
+  razas: 46
+  que,: 45
+  y,: 44
+  eran: 40
+  dj: 40
+  primeros: 38
+  especialmente: 37
+  cuales: 36
+  termino: 36
+  %: 36
+  aspectos: 35
+  tales: 34
+  etc.: 34
+  ademas,: 34
+  trastornos: 34
+  expresion: 32
+  pues: 31
+  utiliza: 31
+  ante: 31
+  investigacion: 31
+  aprendizaje.: 31
+  tecnicas: 30
+  menudo: 30
+  consumo: 29
+  capaz: 29
+  estimulos: 29
+  deben: 29
+  consiste: 28
+  presentan: 28
+  individuo: 28
+  grupos: 27
+  principios: 26
+  requerida]: 26
+  campo: 26
+  areas: 25
+  llamado: 25
+  cabo: 25
+  000: 25
+  aprendizaje,: 25
+  raza: 25
+  estimulo: 25
+  finales: 24
+  modo: 24
+  conocimientos: 24
+
+--- wikipedia_es.txt [STRIPPED] ---
+total tokens: 104376
+unique word types: 15488
+token-level coverage vs current vocab: 73.77%
+type-level coverage vs current vocab: 19.59%
+OOV rate (tokens not in current vocab): 26.23%
+vocab size needed for 95% token coverage (own-text ranking): 10270
+vocab size needed for 99% token coverage (own-text ranking): 14445
+OOV types that are hapax (count == 1): 64.85%
+top 50 most frequent OOV words:
+  estos: 106
+  diferentes: 105
+  esto: 94
+  embargo: 87
+  mediante: 70
+  razas: 57
+  etc: 54
+  dj: 46
+  %: 45
+  especialmente: 42
+  termino: 40
+  eran: 40
+  aspectos: 40
+  tales: 39
+  primeros: 38
+  pues: 38
+  raza: 37
+  cuales: 36
+  expresion: 36
+  individuo: 36
+  trastornos: 36
+  estimulos: 35
+  conocimientos: 34
+  consumo: 33
+  utiliza: 33
+  investigacion: 33
+  grupos: 33
+  tecnicas: 32
+  campo: 32
+  educacion: 32
+  menudo: 32
+  ante: 31
+  estimulo: 31
+  modo: 30
+  domesticos: 30
+  conducta: 30
+  consiste: 29
+  capaz: 29
+  deben: 29
+  factores: 28
+  principios: 28
+  cabo: 28
+  presentan: 28
+  requerida]: 26
+  jovenes: 26
+  estudiantes: 26
+  gen: 26
+  media: 25
+  areas: 25
+  llamado: 25
+
+--- wikipedia_es.txt [NO-NUMERIC] ---
+total tokens: 103586
+unique word types: 15236
+token-level coverage vs current vocab: 74.32%
+type-level coverage vs current vocab: 19.89%
+OOV rate (tokens not in current vocab): 25.68%
+vocab size needed for 95% token coverage (own-text ranking): 10057
+vocab size needed for 99% token coverage (own-text ranking): 14201
+OOV types that are hapax (count == 1): 65.25%
+top 50 most frequent OOV words:
+  estos: 106
+  diferentes: 105
+  esto: 94
+  embargo: 87
+  mediante: 70
+  razas: 57
+  etc: 54
+  dj: 46
+  %: 45
+  especialmente: 42
+  termino: 40
+  eran: 40
+  aspectos: 40
+  tales: 39
+  primeros: 38
+  pues: 38
+  raza: 37
+  cuales: 36
+  expresion: 36
+  individuo: 36
+  trastornos: 36
+  estimulos: 35
+  conocimientos: 34
+  consumo: 33
+  utiliza: 33
+  investigacion: 33
+  grupos: 33
+  tecnicas: 32
+  campo: 32
+  educacion: 32
+  menudo: 32
+  ante: 31
+  estimulo: 31
+  modo: 30
+  domesticos: 30
+  conducta: 30
+  consiste: 29
+  capaz: 29
+  deben: 29
+  factores: 28
+  principios: 28
+  cabo: 28
+  presentan: 28
+  requerida]: 26
+  jovenes: 26
+  estudiantes: 26
+  gen: 26
+  media: 25
+  areas: 25
+  llamado: 25
+
