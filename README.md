@@ -1,4 +1,4 @@
-﻿# Maberyk
+# Maberyk
 
 Un agente autÃ³nomo construido desde cero en PyTorch puro. NaciÃ³ sin saber nada: aprende por curiosidad intrÃ­nseca, mantiene estado emocional, acumula memoria episÃ³dica y desarrolla su propio lenguaje.
 
